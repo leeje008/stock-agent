@@ -53,6 +53,60 @@ with st.sidebar:
 
     st.divider()
 
+    # 종목 검색
+    st.subheader("종목 검색")
+    search_query = st.text_input("종목명 또는 티커 검색", placeholder="삼성전자, TIGER, AAPL 등")
+    if search_query:
+        import yfinance as yf
+        search_results = []
+
+        # 한국 ETF/주식 주요 목록에서 검색
+        KR_STOCK_MAP = {
+            "005930": "삼성전자", "000660": "SK하이닉스", "373220": "LG에너지솔루션",
+            "207940": "삼성바이오로직스", "005380": "현대자동차", "000270": "기아",
+            "068270": "셀트리온", "035420": "NAVER", "035720": "카카오",
+            "051910": "LG화학", "006400": "삼성SDI", "105560": "KB금융",
+            "055550": "신한지주", "066570": "LG전자", "028260": "삼성물산",
+            "133690": "TIGER 미국나스닥100", "360750": "TIGER 미국S&P500",
+            "381170": "TIGER 미국나스닥100커버드콜(합성)", "379800": "TIGER 미국S&P500TR(H)",
+            "381180": "TIGER 미국테크TOP10 INDXX", "143850": "TIGER 미국S&P500선물(H)",
+            "395160": "TIGER 미국배당+7%프리미엄다우존스", "458730": "TIGER 미국S&P500동일가중",
+            "473460": "TIGER 미국나스닥100+15%프리미엄초단기",
+            "069500": "KODEX 200", "229200": "KODEX 코스닥150",
+            "305720": "KODEX 2차전지산업", "364690": "KODEX 나스닥100TR",
+            "379810": "KODEX 미국S&P500TR", "461500": "KODEX 미국배당다우존스",
+            "252670": "KODEX 200선물인버스2X", "122630": "KODEX 레버리지",
+            "304660": "KODEX 미국채울트라30년선물(H)",
+            "411060": "ACE 미국나스닥100", "360200": "ACE 미국S&P500",
+        }
+
+        q = search_query.upper()
+        for ticker, name in KR_STOCK_MAP.items():
+            if q in name.upper() or q in ticker:
+                is_etf = any(tag in name for tag in ["TIGER", "KODEX", "ACE", "ARIRANG", "KBSTAR"])
+                search_results.append({"티커": ticker, "종목명": name, "시장": "KR", "유형": "ETF" if is_etf else "주식"})
+
+        # 미국 종목 yfinance 검색
+        if len(search_results) == 0 and len(search_query) <= 6:
+            try:
+                t = yf.Ticker(search_query.upper())
+                info = t.info
+                if info.get("shortName"):
+                    search_results.append({
+                        "티커": search_query.upper(),
+                        "종목명": info.get("shortName", ""),
+                        "시장": "US" if info.get("quoteType") != "ETF" else "ETF",
+                        "유형": info.get("quoteType", ""),
+                    })
+            except Exception:
+                pass
+
+        if search_results:
+            st.dataframe(pd.DataFrame(search_results), use_container_width=True, hide_index=True)
+            st.caption("위 결과를 참고하여 아래 폼에 입력하세요")
+        elif search_query:
+            st.caption("검색 결과가 없습니다")
+
     st.subheader("종목 추가")
     with st.form("add_holding_form"):
         col1, col2 = st.columns(2)
@@ -82,6 +136,115 @@ with st.sidebar:
             pm.add_holding(holding)
             st.success(f"{new_name} 추가 완료!")
             st.rerun()
+
+    st.divider()
+
+    # 거래내역 업로드 (CSV/Excel)
+    st.subheader("거래내역 가져오기")
+    st.caption("증권사 앱에서 다운로드한 거래내역 파일을 업로드하세요")
+
+    upload_broker = st.selectbox(
+        "증권사 선택",
+        ["신한투자증권", "KB증권", "범용 (직접입력)"],
+        key="upload_broker",
+    )
+    uploaded_file = st.file_uploader(
+        "CSV 또는 Excel 파일",
+        type=["csv", "xlsx", "xls"],
+        key="tx_upload",
+    )
+
+    if uploaded_file is not None:
+        try:
+            from broker.csv_parser import BrokerCSVParser
+            from broker.aggregator import TransactionAggregator
+
+            parser = BrokerCSVParser()
+            file_data = uploaded_file.read()
+            transactions = parser.parse(file_data, uploaded_file.name, upload_broker)
+
+            if not transactions:
+                st.warning("파싱된 거래 내역이 없습니다. 파일 형식을 확인하세요.")
+            else:
+                st.success(f"{len(transactions)}건의 거래 내역 파싱 완료")
+
+                # 거래 내역 미리보기
+                with st.expander(f"거래 내역 미리보기 ({len(transactions)}건)"):
+                    tx_df = pd.DataFrame(transactions)
+                    st.dataframe(tx_df, use_container_width=True, hide_index=True)
+
+                # 집계 결과
+                aggregator = TransactionAggregator()
+                holdings_summary = aggregator.aggregate(transactions)
+
+                st.markdown("**집계 결과 (현재 보유 종목)**")
+                summary_rows = []
+                for h in holdings_summary:
+                    summary_rows.append({
+                        "종목명": h["name"],
+                        "티커": h["ticker"],
+                        "보유수량": h["quantity"],
+                        "평균매입가": f"{h['avg_price']:,.0f}",
+                        "총매입금액": f"{h['total_cost']:,.0f}",
+                        "매수횟수": h["buy_count"],
+                        "최초매수": h["first_buy_date"],
+                        "최근매수": h["last_buy_date"],
+                    })
+                st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+
+                # 포트폴리오에 반영
+                if st.button("포트폴리오에 반영", type="primary"):
+                    added = 0
+                    for h in holdings_summary:
+                        ticker = h["ticker"]
+                        # 6자리 숫자면 한국 종목
+                        is_kr = ticker.isdigit() and len(ticker) == 6
+                        # ETF 키워드 체크
+                        etf_keywords = ["TIGER", "KODEX", "ACE", "ARIRANG", "KBSTAR", "SOL", "HANARO"]
+                        is_etf = any(kw in h["name"] for kw in etf_keywords)
+
+                        if is_kr:
+                            market = "KR"
+                            currency = "KRW"
+                        elif is_etf and not is_kr:
+                            market = "ETF"
+                            currency = "USD"
+                        else:
+                            market = "US"
+                            currency = "USD"
+
+                        holding = Holding(
+                            ticker=ticker,
+                            market=market,
+                            name=h["name"],
+                            quantity=h["quantity"],
+                            avg_price=h["avg_price"],
+                            currency=currency,
+                        )
+                        pm.add_holding(holding)
+                        added += 1
+
+                    st.success(f"{added}개 종목이 포트폴리오에 추가되었습니다!")
+                    st.rerun()
+
+        except Exception as e:
+            st.error(f"파일 처리 실패: {e}")
+
+    # CSV 템플릿 다운로드
+    with st.expander("CSV 템플릿 다운로드"):
+        st.caption("증권사 파일이 없다면 이 템플릿을 사용하세요")
+        try:
+            from broker.csv_parser import BrokerCSVParser
+            template = BrokerCSVParser.generate_template()
+            csv_data = template.to_csv(index=False, encoding="utf-8-sig")
+            st.download_button(
+                "템플릿 다운로드 (CSV)",
+                data=csv_data,
+                file_name="거래내역_템플릿.csv",
+                mime="text/csv",
+            )
+        except Exception:
+            pass
 
     st.divider()
 

@@ -19,11 +19,17 @@ class StockDataFetcher:
 
         if market == "KR":
             df = self._fetch_krx(ticker, period)
+            # pykrx 실패 시 yfinance fallback (.KS 접미사)
+            if df.empty:
+                df = self._fetch_yfinance(f"{ticker}.KS", period)
         else:
             df = self._fetch_yfinance(ticker, period)
 
         if not df.empty:
-            write_cache(cache_key, df.to_dict())
+            # 캐시 저장 시 Timestamp 인덱스를 문자열로 변환
+            cache_df = df.copy()
+            cache_df.index = cache_df.index.astype(str)
+            write_cache(cache_key, cache_df.to_dict())
         return df
 
     def get_multiple_prices(

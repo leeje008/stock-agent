@@ -20,8 +20,12 @@ def read_cache(key: str) -> dict | None:
     if datetime.now() - mtime > timedelta(hours=CACHE_EXPIRY_HOURS):
         os.remove(path)
         return None
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, ValueError):
+        os.remove(path)
+        return None
 
 
 def write_cache(key: str, data: dict):
