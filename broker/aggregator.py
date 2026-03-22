@@ -152,3 +152,52 @@ class TransactionAggregator:
             "price_range": {"min": min(prices), "max": max(prices)},
             "monthly_avg_amount": round(monthly_avg, 2),
         }
+
+    def merge_with_existing(
+        self,
+        new_aggregated: list[dict],
+        existing_holdings: list,  # list of Holding objects
+    ) -> list[dict]:
+        """신규 집계 결과를 기존 보유종목과 병합
+
+        Returns: [
+            {
+                "action": "add" | "update",
+                "ticker": str,
+                "name": str,
+                "quantity": int,
+                "avg_price": float,
+                "existing_id": int | None,  # update인 경우 기존 holding id
+            }
+        ]
+        """
+        existing_map = {h.ticker: h for h in existing_holdings}
+        results = []
+
+        for item in new_aggregated:
+            ticker = item["ticker"]
+            if ticker in existing_map:
+                h = existing_map[ticker]
+                old_cost = h.avg_price * h.quantity
+                new_cost = item["avg_price"] * item["quantity"]
+                total_qty = h.quantity + item["quantity"]
+                merged_avg = (old_cost + new_cost) / total_qty if total_qty > 0 else 0
+                results.append({
+                    "action": "update",
+                    "ticker": ticker,
+                    "name": item["name"] or h.name,
+                    "quantity": total_qty,
+                    "avg_price": round(merged_avg, 2),
+                    "existing_id": h.id,
+                })
+            else:
+                results.append({
+                    "action": "add",
+                    "ticker": ticker,
+                    "name": item["name"],
+                    "quantity": item["quantity"],
+                    "avg_price": item["avg_price"],
+                    "existing_id": None,
+                })
+
+        return results

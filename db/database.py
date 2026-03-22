@@ -78,8 +78,104 @@ def init_db():
             summary TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS upload_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT NOT NULL,
+            broker TEXT,
+            total_transactions INTEGER DEFAULT 0,
+            inserted_transactions INTEGER DEFAULT 0,
+            skipped_duplicates INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS budget_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            amount REAL NOT NULL,
+            type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
+            category TEXT NOT NULL,
+            description TEXT,
+            is_recurring INTEGER DEFAULT 0,
+            recurring_day INTEGER,
+            source TEXT DEFAULT 'manual',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS budget_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            type TEXT NOT NULL CHECK(type IN ('income', 'expense', 'both')),
+            icon TEXT,
+            budget_limit REAL,
+            is_default INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS budget_monthly_summary (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            year_month TEXT NOT NULL UNIQUE,
+            total_income REAL DEFAULT 0,
+            total_expense REAL DEFAULT 0,
+            savings REAL DEFAULT 0,
+            savings_rate REAL DEFAULT 0,
+            investable_amount REAL DEFAULT 0,
+            ai_report TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_budget_date ON budget_entries(date);
+        CREATE INDEX IF NOT EXISTS idx_budget_category ON budget_entries(category);
     """)
 
+    # 기존 transactions 테이블 확장
+    for col_sql in [
+        "ALTER TABLE transactions ADD COLUMN tx_date TEXT",
+        "ALTER TABLE transactions ADD COLUMN fee REAL DEFAULT 0",
+        "ALTER TABLE transactions ADD COLUMN tax REAL DEFAULT 0",
+    ]:
+        try:
+            cursor.execute(col_sql)
+        except Exception:
+            pass  # Column already exists
+
+    conn.commit()
+    conn.close()
+
+
+def init_budget_defaults():
+    """기본 가계부 카테고리 초기화"""
+    conn = get_connection()
+    count = conn.execute("SELECT COUNT(*) FROM budget_categories").fetchone()[0]
+    if count > 0:
+        conn.close()
+        return
+
+    defaults = [
+        ("식비", "expense", "🍚", None, 1, 1),
+        ("교통", "expense", "🚌", None, 1, 2),
+        ("주거/관리비", "expense", "🏠", None, 1, 3),
+        ("쇼핑", "expense", "🛒", None, 1, 4),
+        ("의료/건강", "expense", "🏥", None, 1, 5),
+        ("교육", "expense", "📚", None, 1, 6),
+        ("여가/문화", "expense", "🎬", None, 1, 7),
+        ("보험", "expense", "🛡️", None, 1, 8),
+        ("통신", "expense", "📱", None, 1, 9),
+        ("카페/음료", "expense", "☕", None, 1, 10),
+        ("구독서비스", "expense", "📺", None, 1, 11),
+        ("경조사", "expense", "💐", None, 1, 12),
+        ("기타지출", "expense", "📦", None, 1, 99),
+        ("급여", "income", "💰", None, 1, 1),
+        ("부수입", "income", "💵", None, 1, 2),
+        ("투자수익", "income", "📈", None, 1, 3),
+        ("이자", "income", "🏦", None, 1, 4),
+        ("기타수입", "income", "💎", None, 1, 99),
+    ]
+
+    conn.executemany(
+        "INSERT INTO budget_categories (name, type, icon, budget_limit, is_default, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+        defaults,
+    )
     conn.commit()
     conn.close()
 

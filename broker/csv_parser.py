@@ -241,6 +241,41 @@ class BrokerCSVParser:
         except ValueError:
             return 0.0
 
+    @classmethod
+    def detect_broker(cls, file_data: bytes, filename: str) -> str:
+        """CSV 컬럼명으로 증권사 자동 감지"""
+        # Try reading with multiple encodings to get column names
+        import io
+        df = None
+        for enc in ["utf-8", "cp949", "euc-kr"]:
+            try:
+                if filename.endswith((".xlsx", ".xls")):
+                    df = pd.read_excel(io.BytesIO(file_data), nrows=0)
+                else:
+                    df = pd.read_csv(io.BytesIO(file_data), encoding=enc, nrows=0)
+                break
+            except Exception:
+                continue
+
+        if df is None:
+            return "범용 (직접입력)"
+
+        columns = set(str(c).strip() for c in df.columns)
+
+        best_broker = "범용 (직접입력)"
+        best_score = 0
+
+        for broker_name, fmt in cls.BROKER_FORMATS.items():
+            score = 0
+            for key in ["date_col", "ticker_col", "name_col", "action_col", "quantity_col", "price_col"]:
+                if fmt.get(key) in columns:
+                    score += 1
+            if score > best_score:
+                best_score = score
+                best_broker = broker_name
+
+        return best_broker
+
     @staticmethod
     def get_broker_list() -> list[str]:
         return list(BrokerCSVParser.BROKER_FORMATS.keys())

@@ -107,3 +107,89 @@ class PortfolioManager:
         ).fetchall()
         conn.close()
         return [dict(r) for r in rows]
+
+    def get_holding_by_ticker(self, ticker: str):
+        """티커로 보유종목 조회"""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM portfolio_holdings WHERE ticker=?", (ticker,)
+        ).fetchone()
+        conn.close()
+        if row:
+            return Holding(
+                id=row["id"], ticker=row["ticker"], market=row["market"],
+                name=row["name"], quantity=row["quantity"], avg_price=row["avg_price"],
+                currency=row["currency"], sector=row["sector"],
+            )
+        return None
+
+    def update_or_merge_holding(self, holding_id: int, quantity: int, avg_price: float):
+        """기존 보유종목의 수량과 평균매입가 업데이트"""
+        conn = get_connection()
+        conn.execute(
+            "UPDATE portfolio_holdings SET quantity=?, avg_price=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (quantity, avg_price, holding_id),
+        )
+        conn.commit()
+        conn.close()
+
+    def record_transactions_batch(self, transactions: list[dict]) -> tuple[int, int]:
+        """거래내역 일괄 저장 (중복 제외). Returns (inserted, skipped)"""
+        conn = get_connection()
+        inserted = 0
+        skipped = 0
+
+        for tx in transactions:
+            # Check duplicate
+            existing = conn.execute(
+                """SELECT COUNT(*) FROM transactions
+                   WHERE ticker=? AND tx_date=? AND quantity=? AND price=? AND action=?""",
+                (tx["ticker"], tx["date"], tx["quantity"], tx["price"], tx["action"]),
+            ).fetchone()[0]
+
+            if existing > 0:
+                skipped += 1
+                continue
+
+            conn.execute(
+                """INSERT INTO transactions (ticker, market, action, quantity, price, currency, note, tx_date, fee, tax)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    tx["ticker"],
+                    tx.get("market", "KR"),
+                    tx["action"],
+                    tx["quantity"],
+                    tx["price"],
+                    tx.get("currency", "KRW"),
+                    tx.get("name", ""),
+                    tx["date"],
+                    tx.get("fee", 0),
+                    tx.get("tax", 0),
+                ),
+            )
+            inserted += 1
+
+        conn.commit()
+        conn.close()
+        return inserted, skipped
+
+    def record_upload_history(self, filename: str, broker: str, total: int, inserted: int, skipped: int):
+        """업로드 이력 저장"""
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO upload_history (filename, broker, total_transactions, inserted_transactions, skipped_duplicates) VALUES (?, ?, ?, ?, ?)",
+            (filename, broker, total, inserted, skipped),
+        )
+        conn.commit()
+        conn.close()
+
+    def get_last_upload_info(self) -> dict | None:
+        """마지막 업로드 정보"""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM upload_history ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+        if row:
+            return dict(row)
+        return None
