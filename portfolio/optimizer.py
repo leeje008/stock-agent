@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from pypfopt import EfficientFrontier, risk_models, expected_returns
+from pypfopt import EfficientFrontier, risk_models, expected_returns, BlackLittermanModel
 from pypfopt.discrete_allocation import DiscreteAllocation, get_latest_prices
 
 from db.models import OptimizationResult
@@ -51,6 +51,67 @@ class PortfolioOptimizer:
         perf = ef.portfolio_performance(verbose=False)
         return OptimizationResult(
             strategy=f"target_return_{target_return:.2f}",
+            weights=dict(cleaned),
+            expected_return=perf[0],
+            volatility=perf[1],
+            sharpe_ratio=perf[2],
+        )
+
+    def optimize_black_litterman(
+        self,
+        views: dict[str, float],
+        confidence: dict[str, float] | None = None,
+        risk_free_rate: float = 0.04,
+    ) -> OptimizationResult:
+        """
+        Black-Litterman 모델을 사용한 포트폴리오 최적화.
+
+        views: 종목별 예상 수익률 (ticker -> expected return)
+        confidence: 종목별 확신도 0~1 (ticker -> confidence)
+        risk_free_rate: 무위험 수익률
+        """
+        # Filter views to only include tickers in our price data
+        valid_views = {k: v for k, v in views.items() if k in self.prices.columns}
+        if not valid_views:
+            return self.optimize_max_sharpe(risk_free_rate)
+
+        # Build picking matrix and view vector
+        tickers = list(self.prices.columns)
+        P = np.zeros((len(valid_views), len(tickers)))
+        Q = np.zeros(len(valid_views))
+
+        for i, (ticker, view) in enumerate(valid_views.items()):
+            P[i, tickers.index(ticker)] = 1
+            Q[i] = view
+
+        # Confidence -> omega (uncertainty matrix)
+        if confidence:
+            tau = 0.05
+            omega_diag = []
+            for ticker in valid_views:
+                conf = confidence.get(ticker, 0.5)
+                # Lower confidence -> higher uncertainty
+                omega_diag.append(tau * (1 - conf + 0.01))
+            omega = np.diag(omega_diag)
+        else:
+            omega = None
+
+        bl = BlackLittermanModel(
+            self.cov,
+            pi="market",
+            Q=Q,
+            P=P,
+            omega=omega,
+        )
+        bl_returns = bl.bl_returns()
+
+        ef = EfficientFrontier(bl_returns, self.cov)
+        ef.max_sharpe(risk_free_rate=risk_free_rate)
+        cleaned = ef.clean_weights()
+        perf = ef.portfolio_performance(verbose=False, risk_free_rate=risk_free_rate)
+
+        return OptimizationResult(
+            strategy="black_litterman",
             weights=dict(cleaned),
             expected_return=perf[0],
             volatility=perf[1],

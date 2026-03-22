@@ -53,6 +53,7 @@ class NewsAnalystAgent:
         response = self.llm.generate_json(
             prompt,
             system="당신은 전문 금융 뉴스 분석가입니다. 객관적이고 데이터 기반의 분석을 제공합니다.",
+            model_tier="light",
         )
 
         try:

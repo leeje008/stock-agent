@@ -59,6 +59,25 @@ def init_db():
             metadata_json TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL UNIQUE,
+            total_value REAL NOT NULL,
+            total_cost REAL NOT NULL,
+            holdings_json TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS sentiment_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            market_sentiment TEXT,
+            sentiment_score REAL,
+            ticker_sentiments_json TEXT,
+            summary TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
     """)
 
     conn.commit()

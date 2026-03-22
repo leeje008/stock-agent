@@ -45,3 +45,12 @@ class AnalysisReport:
     metadata: dict | None = None
     id: int | None = None
     created_at: datetime | None = None
+
+
+@dataclass
+class PortfolioSnapshot:
+    date: str
+    total_value: float
+    total_cost: float
+    holdings_json: str | None = None
+    id: int | None = None

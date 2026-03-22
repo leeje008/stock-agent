@@ -52,4 +52,5 @@ class PortfolioManagerAgent:
             prompt,
             system="당신은 경험 많은 포트폴리오 매니저입니다. 데이터에 기반한 객관적 분석과 실행 가능한 추천을 제공합니다.",
             max_tokens=3000,
+            model_tier="heavy",
         )
