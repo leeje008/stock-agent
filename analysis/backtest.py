@@ -60,8 +60,14 @@ class Backtester:
                         opt = PortfolioOptimizer(lookback_prices)
                         if strategy == "max_sharpe":
                             result = opt.optimize_max_sharpe()
-                        else:
+                        elif strategy == "min_volatility":
                             result = opt.optimize_min_volatility()
+                        elif strategy == "hrp":
+                            result = opt.optimize_hrp()
+                        elif strategy == "min_cvar":
+                            result = opt.optimize_min_cvar()
+                        else:
+                            result = opt.optimize_max_sharpe()
                         current_weights = result.weights
                 except Exception:
                     # If optimization fails, use equal weight
@@ -120,7 +126,7 @@ class Backtester:
         Returns: list of backtest results per strategy
         """
         if strategies is None:
-            strategies = ["max_sharpe", "min_volatility", "equal_weight"]
+            strategies = ["max_sharpe", "min_volatility", "hrp", "min_cvar", "equal_weight"]
 
         results = []
         for strat in strategies:

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from budget.manager import BudgetManager
 from budget.models import MonthlySummary
 from db.database import get_connection
+from utils.constants import INVESTABLE_SAVINGS_RATIO
 
 
 class BudgetAnalyzer:
@@ -26,7 +27,7 @@ class BudgetAnalyzer:
 
         savings = income - expense
         savings_rate = (savings / income * 100) if income > 0 else 0
-        investable = max(0, savings * 0.5)  # 저축의 50%를 투자 가능으로
+        investable = max(0, savings * INVESTABLE_SAVINGS_RATIO)
 
         return MonthlySummary(
             year_month=year_month,

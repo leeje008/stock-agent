@@ -1,9 +1,13 @@
 import yfinance as yf
 from pykrx import stock as krx
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 
-from utils.helpers import read_cache, write_cache
+from utils.helpers import read_cache, write_cache, retry
+from utils.logger import get_logger
+
+logger = get_logger("fetcher")
 
 
 class StockDataFetcher:
@@ -26,10 +30,12 @@ class StockDataFetcher:
             df = self._fetch_yfinance(ticker, period)
 
         if not df.empty:
-            # 캐시 저장 시 Timestamp 인덱스를 문자열로 변환
+            logger.info(f"가격 데이터 수집: {market}/{ticker}, {len(df)}일치")
             cache_df = df.copy()
             cache_df.index = cache_df.index.astype(str)
             write_cache(cache_key, cache_df.to_dict())
+        else:
+            logger.warning(f"가격 데이터 없음: {market}/{ticker}")
         return df
 
     def get_multiple_prices(
@@ -41,13 +47,20 @@ class StockDataFetcher:
         Returns: DataFrame with columns=ticker names, index=dates
         """
         all_close = {}
-        for item in tickers:
-            ticker = item["ticker"]
-            market = item["market"]
-            df = self.get_price_data(ticker, market, period)
+
+        def _fetch_one(item):
+            df = self.get_price_data(item["ticker"], item["market"], period)
             if not df.empty:
                 close_col = "Close" if "Close" in df.columns else "종가"
-                all_close[ticker] = df[close_col]
+                return item["ticker"], df[close_col]
+            return item["ticker"], None
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(_fetch_one, item) for item in tickers]
+            for f in as_completed(futures):
+                ticker, series = f.result()
+                if series is not None:
+                    all_close[ticker] = series
 
         combined = pd.DataFrame(all_close)
         combined = combined.ffill().dropna()
@@ -70,11 +83,13 @@ class StockDataFetcher:
             return float(hist["Close"].iloc[-1])
         return 1350.0  # fallback
 
+    @retry(max_attempts=3, delay=1.0)
     def _fetch_yfinance(self, ticker: str, period: str) -> pd.DataFrame:
         stock = yf.Ticker(ticker)
         hist = stock.history(period=period)
         return hist
 
+    @retry(max_attempts=3, delay=1.0)
     def _fetch_krx(self, ticker: str, period: str) -> pd.DataFrame:
         period_days = {"6mo": 180, "1y": 365, "2y": 730, "5y": 1825}
         days = period_days.get(period, 365)

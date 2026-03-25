@@ -18,7 +18,7 @@ from portfolio.tracker import PortfolioTracker
 from data.fetcher import StockDataFetcher
 from data.market_data import MarketDataProcessor
 from data.news_fetcher import NewsFetcher
-from utils.constants import RISK_LEVELS, DISCLAIMER
+from utils.constants import RISK_LEVELS, DISCLAIMER, KR_STOCK_MAP
 from utils.fx import get_usd_krw_rate, convert_to_krw
 from analysis.technical import TechnicalAnalyzer
 
@@ -37,8 +37,9 @@ tracker = PortfolioTracker()
 with st.sidebar:
     st.header("설정")
 
+    default_budget = st.session_state.get("invest_budget", 1_000_000)
     budget = st.number_input(
-        "추가 투자 예산 (원)", value=1_000_000, step=100_000, format="%d"
+        "추가 투자 예산 (원)", value=default_budget, step=100_000, format="%d", key="budget_input"
     )
     risk_level = st.select_slider(
         "위험 선호도",
@@ -47,7 +48,7 @@ with st.sidebar:
     )
     strategy = st.radio(
         "최적화 전략",
-        options=["최대 샤프 비율", "최소 변동성", "Black-Litterman"],
+        options=["최대 샤프 비율", "최소 변동성", "Black-Litterman", "HRP (계층적 리스크 패리티)", "최소 CVaR (꼬리 위험)"],
         index=0,
     )
 
@@ -61,25 +62,6 @@ with st.sidebar:
         search_results = []
 
         # 한국 ETF/주식 주요 목록에서 검색
-        KR_STOCK_MAP = {
-            "005930": "삼성전자", "000660": "SK하이닉스", "373220": "LG에너지솔루션",
-            "207940": "삼성바이오로직스", "005380": "현대자동차", "000270": "기아",
-            "068270": "셀트리온", "035420": "NAVER", "035720": "카카오",
-            "051910": "LG화학", "006400": "삼성SDI", "105560": "KB금융",
-            "055550": "신한지주", "066570": "LG전자", "028260": "삼성물산",
-            "133690": "TIGER 미국나스닥100", "360750": "TIGER 미국S&P500",
-            "381170": "TIGER 미국나스닥100커버드콜(합성)", "379800": "TIGER 미국S&P500TR(H)",
-            "381180": "TIGER 미국테크TOP10 INDXX", "143850": "TIGER 미국S&P500선물(H)",
-            "395160": "TIGER 미국배당+7%프리미엄다우존스", "458730": "TIGER 미국S&P500동일가중",
-            "473460": "TIGER 미국나스닥100+15%프리미엄초단기",
-            "069500": "KODEX 200", "229200": "KODEX 코스닥150",
-            "305720": "KODEX 2차전지산업", "364690": "KODEX 나스닥100TR",
-            "379810": "KODEX 미국S&P500TR", "461500": "KODEX 미국배당다우존스",
-            "252670": "KODEX 200선물인버스2X", "122630": "KODEX 레버리지",
-            "304660": "KODEX 미국채울트라30년선물(H)",
-            "411060": "ACE 미국나스닥100", "360200": "ACE 미국S&P500",
-        }
-
         q = search_query.upper()
         for ticker, name in KR_STOCK_MAP.items():
             if q in name.upper() or q in ticker:
@@ -263,8 +245,8 @@ with st.sidebar:
 # --- 메인 영역 ---
 st.title("주식 포트폴리오 에이전트")
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
-    ["포트폴리오 현황", "최적화 결과", "뉴스 & 시장 분석", "매수 가이드", "기술적 분석", "백테스팅", "AI 토론", "가계부"]
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs(
+    ["포트폴리오 현황", "최적화 결과", "뉴스 & 시장 분석", "매수 가이드", "기술적 분석", "백테스팅", "AI 토론", "가계부", "종목 스크리너", "목표 시뮬레이션", "관심종목"]
 )
 
 
@@ -397,6 +379,65 @@ with tab1:
             st.success("삭제 완료!")
             st.rerun()
 
+        # 배당 요약
+        st.divider()
+        st.subheader("배당 수익 요약")
+        try:
+            from analysis.dividend import get_portfolio_dividend_summary
+            div_summary = get_portfolio_dividend_summary(holdings)
+            st.metric("예상 연간 배당수입", f"{div_summary['total_annual_income_krw']:,.0f}원")
+
+            div_rows = []
+            for d in div_summary["holdings"]:
+                if d["dividend_yield"] > 0:
+                    div_rows.append({
+                        "종목": d["name"],
+                        "배당수익률": f"{d['dividend_yield']:.2%}",
+                        "연간 배당금": f"{d['annual_income_krw']:,.0f}원",
+                        "배당일": d["ex_dividend_date"] or "-",
+                    })
+            if div_rows:
+                st.dataframe(pd.DataFrame(div_rows), use_container_width=True, hide_index=True)
+            else:
+                st.caption("배당 정보가 있는 종목이 없습니다.")
+        except Exception as e:
+            st.caption(f"배당 정보 조회 실패: {e}")
+
+        # 리밸런싱 드리프트 알림
+        try:
+            from portfolio.rebalancer import Rebalancer
+            rebalancer = Rebalancer()
+            targets = rebalancer.get_targets()
+            if targets:
+                st.divider()
+                st.subheader("리밸런싱 알림")
+                target_strategy = rebalancer.get_target_strategy()
+                st.caption(f"목표 전략: {target_strategy}")
+
+                # 현재 비중 계산
+                total_val = df["평가금액(원)"].sum()
+                if total_val > 0:
+                    current_weights = {}
+                    for _, row in df.iterrows():
+                        current_weights[row["티커"]] = row["평가금액(원)"] / total_val
+
+                    drift_alerts = rebalancer.check_drift(current_weights)
+                    if drift_alerts:
+                        drift_rows = []
+                        for a in drift_alerts:
+                            drift_rows.append({
+                                "종목": a["ticker"],
+                                "현재 비중": f"{a['current']:.1%}",
+                                "목표 비중": f"{a['target']:.1%}",
+                                "드리프트": f"{a['drift']:+.1%}",
+                                "조치": a["action"],
+                            })
+                        st.dataframe(pd.DataFrame(drift_rows), use_container_width=True, hide_index=True)
+                    else:
+                        st.success("포트폴리오가 목표 비중에 잘 맞춰져 있습니다.")
+        except Exception:
+            pass
+
 
 # === Tab 2: 최적화 결과 ===
 with tab2:
@@ -413,6 +454,8 @@ with tab2:
                 "최대 샤프 비율": "max_sharpe",
                 "최소 변동성": "min_volatility",
                 "Black-Litterman": "black_litterman",
+                "HRP (계층적 리스크 패리티)": "hrp",
+                "최소 CVaR (꼬리 위험)": "min_cvar",
             }
             strat = strat_map.get(strategy, "max_sharpe")
 
@@ -467,14 +510,17 @@ with tab2:
 
             col1, col2, col3 = st.columns(3)
             col1.metric("기대 수익률", f"{result['expected_return']:.2%}")
-            col2.metric("변동성", f"{result['volatility']:.2%}")
-            col3.metric("샤프 비율", f"{result['sharpe_ratio']:.2f}")
+            is_cvar = result.get("strategy") == "min_cvar"
+            col2.metric("CVaR (5%)" if is_cvar else "변동성", f"{result['volatility']:.2%}")
+            col3.metric("수익률/CVaR" if is_cvar else "샤프 비율", f"{result['sharpe_ratio']:.2f}")
 
             # 전략 표시
             strat_names = {
                 "max_sharpe": "최대 샤프 비율",
                 "min_volatility": "최소 변동성",
                 "black_litterman": "Black-Litterman",
+                "hrp": "HRP (계층적 리스크 패리티)",
+                "min_cvar": "최소 CVaR (꼬리 위험)",
             }
             st.caption(f"전략: {strat_names.get(result.get('strategy', ''), result.get('strategy', ''))}")
 
@@ -528,6 +574,39 @@ with tab2:
                         st.plotly_chart(fig_ef, use_container_width=True)
             except Exception:
                 pass
+
+            # 리스크 기여도 분석
+            try:
+                active_weights = result.get("optimal_weights", {})
+                if active_weights and len(active_weights) >= 2:
+                    tickers_data = [{"ticker": h.ticker, "market": h.market} for h in pm.get_all_holdings()]
+                    prices = fetcher.get_multiple_prices(tickers_data, "1y")
+                    if not prices.empty:
+                        from portfolio.optimizer import PortfolioOptimizer
+                        opt_rc = PortfolioOptimizer(prices)
+                        risk_contrib = opt_rc.calculate_risk_contribution(active_weights)
+                        if risk_contrib:
+                            st.subheader("리스크 기여도")
+                            rc_df = pd.DataFrame(
+                                list(risk_contrib.items()),
+                                columns=["종목", "리스크 기여도"],
+                            ).sort_values("리스크 기여도", ascending=True)
+                            fig_rc = px.bar(
+                                rc_df, x="리스크 기여도", y="종목",
+                                orientation="h", title="종목별 포트폴리오 리스크 기여도",
+                            )
+                            fig_rc.update_layout(xaxis_tickformat=".1%")
+                            st.plotly_chart(fig_rc, use_container_width=True)
+                            st.caption("각 종목이 전체 포트폴리오 리스크에 기여하는 비율입니다.")
+            except Exception:
+                pass
+
+            # 리밸런싱 목표 비중 설정
+            if st.button("이 비중을 리밸런싱 목표로 설정", key="set_rebalance_target"):
+                from portfolio.rebalancer import Rebalancer
+                rebalancer = Rebalancer()
+                rebalancer.save_targets(result["optimal_weights"], result.get("strategy", ""))
+                st.success("목표 비중이 설정되었습니다. 포트폴리오 현황 탭에서 드리프트 알림을 확인할 수 있습니다.")
 
 
 # === Tab 3: 뉴스 & 시장 분석 ===
@@ -887,6 +966,32 @@ with tab5:
                 except Exception as e:
                     st.error(f"펀더멘탈 분석 실패: {e}")
 
+    # 종목 간 상관관계 히트맵
+    if len(holdings) >= 2:
+        st.divider()
+        st.subheader("종목 간 상관관계")
+        try:
+            corr_tickers = [{"ticker": h.ticker, "market": h.market} for h in holdings]
+            corr_prices = fetcher.get_multiple_prices(corr_tickers, "1y")
+            if not corr_prices.empty and len(corr_prices.columns) >= 2:
+                corr_matrix = market_proc.calculate_correlation(corr_prices)
+                # 티커 → 종목명 매핑
+                name_map = {h.ticker: h.name for h in holdings}
+                corr_labels = [name_map.get(t, t) for t in corr_matrix.columns]
+                fig_corr = px.imshow(
+                    corr_matrix.values,
+                    x=corr_labels, y=corr_labels,
+                    color_continuous_scale="RdBu_r",
+                    zmin=-1, zmax=1,
+                    text_auto=".2f",
+                    title="수익률 상관관계 매트릭스",
+                )
+                fig_corr.update_layout(height=500)
+                st.plotly_chart(fig_corr, use_container_width=True)
+                st.caption("해석: >0.7 높은 상관관계 (분산 효과 낮음) | <0.3 낮은 상관관계 (분산 효과 높음)")
+        except Exception as e:
+            st.error(f"상관관계 분석 실패: {e}")
+
 
 # === Tab 6: 백테스팅 ===
 with tab6:
@@ -935,6 +1040,8 @@ with tab6:
             strat_names = {
                 "max_sharpe": "최대 샤프",
                 "min_volatility": "최소 변동성",
+                "hrp": "HRP",
+                "min_cvar": "최소 CVaR",
                 "equal_weight": "동일 비중",
             }
             perf_rows = []
@@ -955,7 +1062,7 @@ with tab6:
             # 자산 곡선 차트
             st.markdown("### 자산 곡선 (초기값 = 1)")
             fig_bt = go.Figure()
-            colors = ["blue", "orange", "green"]
+            colors = ["blue", "orange", "green", "red", "purple"]
             for i, r in enumerate(results):
                 if "error" in r or "equity_curve" not in r:
                     continue
@@ -1344,6 +1451,26 @@ with tab8:
 
         st.caption(f"기준: 월 수입 {investable_data['monthly_income']:,.0f}원 - 월 지출 {investable_data['monthly_expense']:,.0f}원, 비상금 3개월분 월적립 차감")
 
+        # 투자 예산 반영 버튼
+        inv_amount = investable_data["investable_amount"]
+        if inv_amount > 0:
+            if st.button("이 금액을 사이드바 투자 예산에 반영", key="apply_invest_budget"):
+                st.session_state["invest_budget"] = int(inv_amount)
+                st.success(f"투자 예산이 {inv_amount:,.0f}원으로 반영되었습니다. 페이지를 새로고침하면 사이드바에 적용됩니다.")
+                st.rerun()
+
+        # 투자 적정성 지표
+        if investable_data["monthly_income"] > 0:
+            try:
+                _, port_df_check = load_portfolio_data()
+                pv = port_df_check["평가금액(원)"].sum() if not port_df_check.empty else 0
+                monthly_inc = investable_data["monthly_income"]
+                if pv > 0 and monthly_inc > 0:
+                    invest_to_income = pv / (monthly_inc * 12)
+                    st.info(f"투자자산/연소득 비율: {invest_to_income:.1f}배 — {'적정 수준' if invest_to_income < 3 else '높은 투자 비중 (리스크 관리 필요)'}")
+            except Exception:
+                pass
+
         # 총 자산 현황
         st.divider()
         st.subheader("총 자산 현황")
@@ -1381,3 +1508,256 @@ with tab8:
                 st.markdown(suggestion)
             except Exception as e:
                 st.error(f"추천 실패: {e}")
+
+
+# === Tab 9: 종목 스크리너 ===
+with tab9:
+    st.subheader("종목 스크리너")
+    st.caption("PER, PBR, 배당수익률 등으로 한국/미국 시장을 스크리닝합니다.")
+
+    scr_market = st.selectbox("시장 선택", ["KOSPI", "KOSDAQ", "S&P 500 주요종목"], key="scr_market")
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        scr_per_max = st.number_input("PER 최대", value=20.0, min_value=1.0, max_value=200.0, key="scr_per")
+    with col2:
+        scr_pbr_max = st.number_input("PBR 최대", value=3.0, min_value=0.1, max_value=50.0, key="scr_pbr")
+    with col3:
+        scr_div_min = st.number_input("배당수익률 최소 (%)", value=0.0, min_value=0.0, max_value=20.0, key="scr_div")
+    with col4:
+        scr_roe_min = st.number_input("ROE 최소 (%)", value=0.0, min_value=0.0, max_value=100.0, key="scr_roe")
+
+    if st.button("스크리닝 실행", type="primary", key="run_screener"):
+        from analysis.screener import screen_kr_market, screen_us_stocks
+
+        filters = {
+            "per_max": scr_per_max,
+            "pbr_max": scr_pbr_max,
+            "div_min": scr_div_min,
+            "roe_min": scr_roe_min,
+        }
+
+        with st.spinner("스크리닝 중..."):
+            if scr_market in ["KOSPI", "KOSDAQ"]:
+                scr_df = screen_kr_market(scr_market, filters)
+            else:
+                scr_df = screen_us_stocks(filters=filters)
+
+        if scr_df.empty:
+            st.info("조건에 맞는 종목이 없습니다.")
+        else:
+            st.success(f"{len(scr_df)}개 종목이 조건에 부합합니다.")
+            st.dataframe(scr_df, use_container_width=True, hide_index=True)
+            st.session_state["screener_results"] = scr_df
+
+
+# === Tab 10: 목표 시뮬레이션 ===
+with tab10:
+    st.subheader("몬테카를로 시뮬레이션")
+    st.caption("현재 포트폴리오와 월 적립액을 기반으로 미래 자산을 시뮬레이션합니다.")
+
+    # 기본값: 현재 포트폴리오 가치, 가계부 투자가능액, optimizer 수익률/변동성
+    try:
+        _, mc_port_df = load_portfolio_data()
+        mc_initial = mc_port_df["평가금액(원)"].sum() if not mc_port_df.empty else 0
+    except Exception:
+        mc_initial = 0
+
+    opt_result = st.session_state.get("optimization_result", {})
+    default_return = opt_result.get("expected_return", 0.08)
+    default_vol = opt_result.get("volatility", 0.15)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        mc_initial_val = st.number_input(
+            "초기 투자금 (원)", value=int(mc_initial), step=1_000_000, format="%d", key="mc_init"
+        )
+        mc_monthly = st.number_input(
+            "월 적립액 (원)", value=500_000, step=100_000, format="%d", key="mc_monthly"
+        )
+        mc_years = st.slider("투자 기간 (년)", min_value=1, max_value=40, value=20, key="mc_years")
+
+    with col2:
+        mc_return = st.number_input(
+            "기대 연수익률", value=round(default_return, 4), step=0.01, format="%.4f", key="mc_return"
+        )
+        mc_vol = st.number_input(
+            "연간 변동성", value=round(default_vol, 4), step=0.01, format="%.4f", key="mc_vol"
+        )
+        mc_goal = st.number_input(
+            "목표 금액 (원)", value=1_000_000_000, step=100_000_000, format="%d", key="mc_goal"
+        )
+
+    if st.button("시뮬레이션 실행", type="primary", key="run_mc"):
+        from analysis.monte_carlo import simulate
+        import numpy as np
+
+        with st.spinner("1,000회 시뮬레이션 실행 중..."):
+            mc_result = simulate(
+                initial_value=mc_initial_val,
+                monthly_contribution=mc_monthly,
+                expected_annual_return=mc_return,
+                annual_volatility=mc_vol,
+                years=mc_years,
+                n_simulations=1000,
+                goal_amount=mc_goal,
+            )
+
+        # 결과 메트릭
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("목표 달성 확률", f"{mc_result['prob_goal']:.1%}")
+        col2.metric("중간값 (50%)", f"{mc_result['final_p50']:,.0f}원")
+        col3.metric("낙관적 (90%)", f"{mc_result['final_p90']:,.0f}원")
+        col4.metric("비관적 (10%)", f"{mc_result['final_p10']:,.0f}원")
+
+        if "median_time_to_goal_years" in mc_result:
+            st.info(f"중간값 기준 목표 도달 시점: 약 {mc_result['median_time_to_goal_years']}년")
+
+        # 팬 차트
+        months = list(range(mc_result["n_months"] + 1))
+        years_axis = [m / 12 for m in months]
+
+        fig_mc = go.Figure()
+
+        # 10-90 밴드
+        fig_mc.add_trace(go.Scatter(
+            x=years_axis, y=mc_result["percentile_paths"][90],
+            mode="lines", line=dict(width=0), showlegend=False,
+        ))
+        fig_mc.add_trace(go.Scatter(
+            x=years_axis, y=mc_result["percentile_paths"][10],
+            mode="lines", line=dict(width=0), fill="tonexty",
+            fillcolor="rgba(100, 149, 237, 0.15)", name="10-90%",
+        ))
+
+        # 25-75 밴드
+        fig_mc.add_trace(go.Scatter(
+            x=years_axis, y=mc_result["percentile_paths"][75],
+            mode="lines", line=dict(width=0), showlegend=False,
+        ))
+        fig_mc.add_trace(go.Scatter(
+            x=years_axis, y=mc_result["percentile_paths"][25],
+            mode="lines", line=dict(width=0), fill="tonexty",
+            fillcolor="rgba(100, 149, 237, 0.3)", name="25-75%",
+        ))
+
+        # 중간값
+        fig_mc.add_trace(go.Scatter(
+            x=years_axis, y=mc_result["percentile_paths"][50],
+            mode="lines", line=dict(color="blue", width=2), name="중간값 (50%)",
+        ))
+
+        # 목표선
+        fig_mc.add_hline(y=mc_goal, line_dash="dash", line_color="red",
+                         annotation_text=f"목표: {mc_goal:,.0f}원")
+
+        # 총 투자원금선
+        invested_line = [mc_initial_val + mc_monthly * m for m in months]
+        fig_mc.add_trace(go.Scatter(
+            x=years_axis, y=invested_line,
+            mode="lines", line=dict(color="gray", dash="dot"), name="총 투자원금",
+        ))
+
+        fig_mc.update_layout(
+            title="포트폴리오 가치 시뮬레이션",
+            xaxis_title="투자 기간 (년)",
+            yaxis_title="포트폴리오 가치 (원)",
+            hovermode="x unified",
+            height=500,
+        )
+        st.plotly_chart(fig_mc, use_container_width=True)
+
+        st.caption(f"총 투자원금: {mc_result['total_invested']:,.0f}원 | 수익 확률: {mc_result['prob_positive']:.1%}")
+
+
+# === Tab 11: 관심종목 ===
+with tab11:
+    from portfolio.watchlist import WatchlistManager
+    wm = WatchlistManager()
+
+    st.subheader("관심종목 관리")
+
+    # 추가 폼
+    with st.expander("관심종목 추가"):
+        wcol1, wcol2, wcol3 = st.columns(3)
+        with wcol1:
+            w_ticker = st.text_input("티커", placeholder="005930 또는 AAPL", key="w_ticker")
+        with wcol2:
+            w_market = st.selectbox("시장", ["KR", "US", "ETF"], key="w_market")
+        with wcol3:
+            w_name = st.text_input("종목명", placeholder="삼성전자", key="w_name")
+
+        wcol4, wcol5 = st.columns(2)
+        with wcol4:
+            w_low = st.number_input("목표 매수가", value=0.0, step=1000.0, format="%.0f", key="w_low")
+        with wcol5:
+            w_high = st.number_input("목표 매도가", value=0.0, step=1000.0, format="%.0f", key="w_high")
+
+        w_note = st.text_input("메모", key="w_note")
+
+        if st.button("관심종목 추가", key="add_watchlist"):
+            if w_ticker and w_name:
+                wm.add(
+                    w_ticker, w_market, w_name,
+                    target_price_low=w_low if w_low > 0 else None,
+                    target_price_high=w_high if w_high > 0 else None,
+                    note=w_note,
+                )
+                st.success(f"{w_name} 추가 완료!")
+                st.rerun()
+            else:
+                st.warning("티커와 종목명을 입력하세요.")
+
+    # 관심종목 현황
+    watchlist = wm.get_all()
+    if not watchlist:
+        st.info("관심종목을 추가하세요.")
+    else:
+        if st.button("가격 업데이트", key="refresh_watchlist"):
+            with st.spinner("관심종목 가격 조회 중..."):
+                alerts = wm.check_alerts()
+                st.session_state["watchlist_alerts"] = alerts
+
+        if "watchlist_alerts" in st.session_state:
+            alerts = st.session_state["watchlist_alerts"]
+
+            # 알림 표시
+            for a in alerts:
+                if a.get("alert_type"):
+                    st.warning(f"🔔 {a['name']} ({a['ticker']}): {a['alert_type']} — 현재가 {a['current_price']:,.0f}")
+
+            # 테이블
+            watch_rows = []
+            for a in alerts:
+                row = {
+                    "종목": f"{a['name']} ({a['ticker']})",
+                    "현재가": f"{a['current_price']:,.0f}",
+                    "변동률": f"{a['change_pct']:+.2f}%",
+                }
+                if a["target_low"]:
+                    row["매수 목표"] = f"{a['target_low']:,.0f}"
+                    row["목표까지"] = f"{a['distance_to_low']:+.1f}%" if a["distance_to_low"] is not None else "-"
+                else:
+                    row["매수 목표"] = "-"
+                    row["목표까지"] = "-"
+                if a["target_high"]:
+                    row["매도 목표"] = f"{a['target_high']:,.0f}"
+                else:
+                    row["매도 목표"] = "-"
+                watch_rows.append(row)
+
+            if watch_rows:
+                st.dataframe(pd.DataFrame(watch_rows), use_container_width=True, hide_index=True)
+        else:
+            st.caption("'가격 업데이트' 버튼을 눌러 현재가를 확인하세요.")
+
+        # 삭제
+        st.divider()
+        del_items = [(w["id"], f"{w['name']} ({w['ticker']})") for w in watchlist]
+        del_choice = st.selectbox("삭제할 종목", options=del_items, format_func=lambda x: x[1], key="del_watchlist")
+        if st.button("관심종목 삭제", key="remove_watchlist"):
+            wm.remove(del_choice[0])
+            st.success("삭제 완료!")
+            if "watchlist_alerts" in st.session_state:
+                del st.session_state["watchlist_alerts"]
+            st.rerun()

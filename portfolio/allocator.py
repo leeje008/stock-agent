@@ -31,6 +31,10 @@ class BudgetAllocator:
             result = optimizer.optimize_max_sharpe()
         elif strategy == "min_volatility":
             result = optimizer.optimize_min_volatility()
+        elif strategy == "hrp":
+            result = optimizer.optimize_hrp()
+        elif strategy == "min_cvar":
+            result = optimizer.optimize_min_cvar()
         else:
             result = optimizer.optimize_max_sharpe()
 

@@ -25,6 +25,31 @@ FRED_INDICATORS = {
 # Currency tickers for exchange rate
 FX_TICKER_USDKRW = "KRW=X"
 
+# Korean stock/ETF ticker map
+KR_STOCK_MAP = {
+    "005930": "삼성전자", "000660": "SK하이닉스", "373220": "LG에너지솔루션",
+    "207940": "삼성바이오로직스", "005380": "현대자동차", "000270": "기아",
+    "068270": "셀트리온", "035420": "NAVER", "035720": "카카오",
+    "051910": "LG화학", "006400": "삼성SDI", "105560": "KB금융",
+    "055550": "신한지주", "066570": "LG전자", "028260": "삼성물산",
+    "133690": "TIGER 미국나스닥100", "360750": "TIGER 미국S&P500",
+    "381170": "TIGER 미국나스닥100커버드콜(합성)", "379800": "TIGER 미국S&P500TR(H)",
+    "381180": "TIGER 미국테크TOP10 INDXX", "143850": "TIGER 미국S&P500선물(H)",
+    "395160": "TIGER 미국배당+7%프리미엄다우존스", "458730": "TIGER 미국S&P500동일가중",
+    "473460": "TIGER 미국나스닥100+15%프리미엄초단기",
+    "069500": "KODEX 200", "229200": "KODEX 코스닥150",
+    "305720": "KODEX 2차전지산업", "364690": "KODEX 나스닥100TR",
+    "379810": "KODEX 미국S&P500TR", "461500": "KODEX 미국배당다우존스",
+    "252670": "KODEX 200선물인버스2X", "122630": "KODEX 레버리지",
+    "304660": "KODEX 미국채울트라30년선물(H)",
+    "411060": "ACE 미국나스닥100", "360200": "ACE 미국S&P500",
+}
+
+# Portfolio optimization constants
+DEFAULT_RISK_FREE_RATE = 0.04
+BL_TAU = 0.05
+INVESTABLE_SAVINGS_RATIO = 0.5
+
 # Disclaimer
 DISCLAIMER = (
     "본 정보는 투자 권유가 아니며, 투자 결정의 책임은 사용자에게 있습니다. "

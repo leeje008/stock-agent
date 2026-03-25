@@ -1,8 +1,12 @@
 import re
+import time
 
 from openai import OpenAI
 
 from config import LLM_BASE_URL, LLM_API_KEY, LLM_MODEL_LIGHT, LLM_MODEL_HEAVY, LLM_MAX_TOKENS
+from utils.logger import get_logger
+
+logger = get_logger("llm_client")
 
 
 class LLMClient:
@@ -32,13 +36,21 @@ class LLMClient:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        response = self.client.chat.completions.create(
-            model=model,
-            messages=messages,
-            max_tokens=max_tokens or self.max_tokens,
-            temperature=temperature,
-        )
-        return response.choices[0].message.content
+        start = time.time()
+        try:
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens or self.max_tokens,
+                temperature=temperature,
+            )
+            elapsed = time.time() - start
+            logger.info(f"LLM 호출 완료: model={model}, elapsed={elapsed:.1f}s, prompt_len={len(prompt)}")
+            return response.choices[0].message.content
+        except Exception as e:
+            elapsed = time.time() - start
+            logger.error(f"LLM 호출 실패: model={model}, elapsed={elapsed:.1f}s, error={e}")
+            raise
 
     def generate_json(
         self,

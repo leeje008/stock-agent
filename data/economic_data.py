@@ -3,7 +3,10 @@ from fredapi import Fred
 
 from config import FRED_API_KEY
 from utils.constants import FRED_INDICATORS
-from utils.helpers import read_cache, write_cache
+from utils.helpers import read_cache, write_cache, retry
+from utils.logger import get_logger
+
+logger = get_logger("economic_data")
 
 
 class EconomicDataFetcher:
@@ -14,6 +17,7 @@ class EconomicDataFetcher:
             raise ValueError("FRED_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
         self.fred = Fred(api_key=FRED_API_KEY)
 
+    @retry(max_attempts=3, delay=1.0)
     def get_indicator(self, series_id: str, period: str = "2y") -> pd.Series:
         cache_key = f"fred_{series_id}_{period}"
         cached = read_cache(cache_key)
@@ -35,7 +39,7 @@ class EconomicDataFetcher:
             try:
                 indicators[name] = self.get_indicator(series_id)
             except Exception as e:
-                print(f"[WARN] {name} 수집 실패: {e}")
+                logger.warning(f"{name} 수집 실패: {e}")
         return indicators
 
     def get_macro_summary(self) -> dict:

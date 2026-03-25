@@ -126,6 +126,24 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_budget_date ON budget_entries(date);
         CREATE INDEX IF NOT EXISTS idx_budget_category ON budget_entries(category);
+
+        CREATE TABLE IF NOT EXISTS rebalancing_targets (
+            ticker TEXT PRIMARY KEY,
+            target_weight REAL NOT NULL,
+            strategy TEXT,
+            set_date TEXT DEFAULT (date('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS watchlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            market TEXT NOT NULL,
+            name TEXT NOT NULL,
+            target_price_low REAL,
+            target_price_high REAL,
+            note TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
     """)
 
     # 기존 transactions 테이블 확장
