@@ -18,9 +18,11 @@ from portfolio.tracker import PortfolioTracker
 from data.fetcher import StockDataFetcher
 from data.market_data import MarketDataProcessor
 from data.news_fetcher import NewsFetcher
-from utils.constants import RISK_LEVELS, DISCLAIMER, KR_STOCK_MAP
+from utils.constants import RISK_LEVELS, DISCLAIMER, KR_STOCK_MAP, ISA_ANNUAL_LIMIT
 from utils.fx import get_usd_krw_rate, convert_to_krw
 from analysis.technical import TechnicalAnalyzer
+from portfolio.isa_manager import IsaManager, get_or_create_default_account
+from db.models import IsaAccount, MonthlyContribution
 
 # --- 초기 설정 ---
 st.set_page_config(page_title="주식 포트폴리오 에이전트", layout="wide")
@@ -31,6 +33,8 @@ fetcher = StockDataFetcher()
 market_proc = MarketDataProcessor()
 news_fetcher = NewsFetcher()
 tracker = PortfolioTracker()
+isa_mgr = IsaManager()
+isa_account = get_or_create_default_account()
 
 
 # --- 사이드바 ---
@@ -226,6 +230,166 @@ with st.sidebar:
             st.download_button(
                 "템플릿 다운로드 (CSV)",
                 data=csv_data, file_name="거래내역_템플릿.csv", mime="text/csv",
+            )
+        except Exception:
+            pass
+
+    st.divider()
+
+    # === ISA 계좌 (적립식) ===
+    st.subheader("ISA 계좌")
+    with st.expander("ISA 계좌 설정", expanded=False):
+        new_monthly = st.number_input(
+            "월 적립금 (원)",
+            value=int(isa_account.monthly_contribution),
+            step=100_000, format="%d", key="isa_monthly_input",
+        )
+        new_risk = st.selectbox(
+            "위험성향 (DCA 비중 결정)",
+            options=list(RISK_LEVELS.keys()),
+            index=list(RISK_LEVELS.keys()).index(isa_account.risk_level)
+                  if isa_account.risk_level in RISK_LEVELS else 2,
+            key="isa_risk_input",
+        )
+        new_start = st.text_input(
+            "시작일 (YYYY-MM-DD)",
+            value=isa_account.start_date or "",
+            key="isa_start_input",
+        )
+        if st.button("ISA 설정 저장", key="isa_save_btn"):
+            isa_mgr.upsert_account(IsaAccount(
+                account_name=isa_account.account_name,
+                monthly_contribution=float(new_monthly),
+                risk_level=new_risk,
+                start_date=new_start or None,
+                annual_limit=isa_account.annual_limit,
+                tax_status=isa_account.tax_status,
+                note=isa_account.note,
+            ))
+            st.success("ISA 설정 저장 완료")
+            st.rerun()
+
+    # 누적 납입액 / 잔여 한도
+    from datetime import datetime as _dt
+    _year = _dt.today().year
+    _yymm = _dt.today().strftime("%Y-%m")
+    _year_total = isa_mgr.get_year_total(isa_account.id, _year)
+    _remaining = max(0.0, isa_account.annual_limit - _year_total)
+    col_a, col_b = st.columns(2)
+    col_a.metric(f"{_year}년 납입액", f"{_year_total:,.0f}원")
+    col_b.metric("잔여 한도", f"{_remaining:,.0f}원")
+
+    # 이번 달 매수 빠른 입력
+    with st.form("isa_quick_buy_form"):
+        st.caption("이번 달 매수 기록 (단순 폼)")
+        c1, c2 = st.columns(2)
+        with c1:
+            qb_date = st.date_input("거래일", value=_dt.today(), key="isa_qb_date")
+            qb_qty = st.number_input("수량", min_value=0, value=0, key="isa_qb_qty")
+        with c2:
+            qb_ticker = st.text_input("티커", placeholder="360750 / VOO", key="isa_qb_ticker")
+            qb_price = st.number_input("가격", min_value=0.0, value=0.0, format="%.2f", key="isa_qb_price")
+        qb_name = st.text_input("종목명 (선택)", placeholder="TIGER 미국S&P500", key="isa_qb_name")
+        qb_submitted = st.form_submit_button("이번 달 매수 추가")
+
+    if qb_submitted and qb_ticker and qb_qty > 0 and qb_price > 0:
+        from broker.aggregator import TransactionAggregator
+        ticker = qb_ticker.strip().upper()
+        if ticker.startswith("A") and ticker[1:].isdigit():
+            ticker = ticker[1:]
+        is_kr = ticker.isdigit() and len(ticker) == 6
+        if is_kr and len(ticker) < 6:
+            ticker = ticker.zfill(6)
+        market = "KR" if is_kr else "US"
+        currency = "KRW" if is_kr else "USD"
+        amount = qb_qty * qb_price
+
+        # 거래내역 + 보유종목 갱신
+        tx = {
+            "date": qb_date.strftime("%Y-%m-%d"),
+            "ticker": ticker,
+            "name": qb_name or ticker,
+            "action": "BUY",
+            "quantity": int(qb_qty),
+            "price": float(qb_price),
+            "amount": float(amount),
+            "fee": 0.0, "tax": 0.0,
+            "currency": currency, "market": market,
+        }
+        pm.record_transactions_batch([tx])
+        existing = pm.get_holding_by_ticker(ticker)
+        if existing:
+            new_qty = existing.quantity + int(qb_qty)
+            new_avg = (existing.quantity * existing.avg_price + amount) / new_qty
+            pm.update_or_merge_holding(existing.id, new_qty, new_avg)
+        else:
+            pm.add_holding(Holding(
+                ticker=ticker, market=market, name=qb_name or ticker,
+                quantity=int(qb_qty), avg_price=float(qb_price), currency=currency,
+            ))
+
+        # 월별 납입 누적 (KRW 기준; USD면 환율 곱)
+        krw_amount = amount if currency == "KRW" else amount * get_usd_krw_rate()
+        existing_contrib = next(
+            (c for c in isa_mgr.get_contributions(isa_account.id) if c.year_month == _yymm),
+            None,
+        )
+        new_total = (existing_contrib.amount if existing_contrib else 0) + krw_amount
+        isa_mgr.record_contribution(MonthlyContribution(
+            account_id=isa_account.id, year_month=_yymm,
+            amount=new_total, note="quick_buy",
+        ))
+        st.success(f"{ticker} {qb_qty}주 기록 ({krw_amount:,.0f}원)")
+        st.rerun()
+
+    # ISA 전용 CSV 업로드 (단순 양식)
+    with st.expander("ISA CSV 업로드 (단순 양식)"):
+        st.caption("컬럼: date, ticker, name, quantity, price, [contribution_amount], [market]")
+        isa_csv = st.file_uploader(
+            "ISA 매수 CSV", type=["csv", "xlsx", "xls"], key="isa_csv_upload"
+        )
+        if isa_csv is not None:
+            try:
+                from broker.manual_isa import parse as isa_parse
+                rows = isa_parse(isa_csv.read(), isa_csv.name)
+                if not rows:
+                    st.warning("파싱된 거래 내역이 없습니다.")
+                else:
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                    if st.button("ISA 거래 일괄 반영", key="isa_csv_apply"):
+                        inserted, skipped = pm.record_transactions_batch(rows)
+                        # 월별 납입 누적
+                        by_month: dict[str, float] = {}
+                        for r in rows:
+                            ym = r["date"][:7]
+                            krw = r["contribution_amount"] if r["currency"] == "KRW" \
+                                  else r["contribution_amount"] * get_usd_krw_rate()
+                            by_month[ym] = by_month.get(ym, 0.0) + krw
+                        for ym, total in by_month.items():
+                            existing_c = next(
+                                (c for c in isa_mgr.get_contributions(isa_account.id)
+                                 if c.year_month == ym),
+                                None,
+                            )
+                            merged = (existing_c.amount if existing_c else 0) + total
+                            isa_mgr.record_contribution(MonthlyContribution(
+                                account_id=isa_account.id, year_month=ym,
+                                amount=merged, note="csv_upload",
+                            ))
+                        st.success(f"{inserted}건 거래 반영 (중복 {skipped}건 제외)")
+                        st.rerun()
+            except Exception as e:
+                st.error(f"파일 처리 실패: {e}")
+
+        # ISA 템플릿 다운로드
+        try:
+            from broker.manual_isa import template as isa_template
+            tdf = isa_template()
+            st.download_button(
+                "ISA 템플릿 다운로드 (CSV)",
+                data=tdf.to_csv(index=False, encoding="utf-8-sig"),
+                file_name="isa_매수_템플릿.csv",
+                mime="text/csv",
             )
         except Exception:
             pass
@@ -761,14 +925,97 @@ with tab3:
 with tab4:
     holdings = pm.get_all_holdings()
 
+    # --- ISA DCA 가이드 (상단, 항상 사용 가능) ---
+    st.subheader("ISA 월간 매수 가이드 (DCA)")
+    st.caption(
+        f"계좌: {isa_account.account_name} · 월 적립금: "
+        f"{isa_account.monthly_contribution:,.0f}원 · 위험성향: {isa_account.risk_level}"
+    )
+
+    if not holdings:
+        st.info("사이드바에서 종목을 추가하세요. (S&P/NASDAQ ETF 권장)")
+    else:
+        dca_tickers = [
+            {"ticker": h.ticker, "name": h.name, "market": h.market}
+            for h in holdings
+        ]
+        dca_amount = st.number_input(
+            "이번 달 추천 산출 금액 (원)",
+            value=int(isa_account.monthly_contribution),
+            step=100_000, format="%d", key="dca_amount_input",
+        )
+        dca_risk = st.selectbox(
+            "위험성향", options=list(RISK_LEVELS.keys()),
+            index=list(RISK_LEVELS.keys()).index(isa_account.risk_level)
+                  if isa_account.risk_level in RISK_LEVELS else 2,
+            key="dca_risk_input",
+        )
+
+        if st.button("DCA 추천 산출", key="dca_run_btn"):
+            try:
+                from portfolio.dca_advisor import DcaAdvisor
+                advisor = DcaAdvisor()
+                with st.spinner("종목별 가격 조회 + 비중 계산 중..."):
+                    plan = advisor.recommend(
+                        tickers=dca_tickers,
+                        monthly_amount=float(dca_amount),
+                        risk_level=dca_risk,
+                    )
+                st.session_state["dca_plan"] = plan.to_summary()
+                st.session_state["dca_plan_obj"] = {
+                    "weights_json": plan.weights_json,
+                    "monthly_amount": plan.monthly_amount,
+                    "strategy": plan.strategy,
+                }
+            except Exception as e:
+                st.error(f"DCA 추천 실패: {e}")
+
+        if "dca_plan" in st.session_state:
+            plan_data = st.session_state["dca_plan"]
+            st.success(f"전략: **{plan_data['strategy']}** — {plan_data['rationale']}")
+            rows = plan_data["rows"]
+            df_show = pd.DataFrame([
+                {
+                    "종목": f"{r['name']} ({r['ticker']})",
+                    "비중": f"{r['weight']*100:.1f}%",
+                    "목표 금액(원)": f"{r['target_amount_krw']:,.0f}",
+                    "현재가": f"{r['price']:,.2f} {r['currency']}",
+                    "매수 수량": r["shares"],
+                    "실투자(원)": f"{r['spent_krw']:,.0f}",
+                }
+                for r in rows
+            ])
+            st.dataframe(df_show, use_container_width=True, hide_index=True)
+            col_x, col_y = st.columns(2)
+            col_x.metric("투자 금액 합계",
+                         f"{sum(r['spent_krw'] for r in rows):,.0f}원")
+            col_y.metric("잔여 현금", f"{plan_data['leftover_krw']:,.0f}원")
+
+            if st.button("이 비중을 목표 비중으로 저장", key="dca_save_btn"):
+                from datetime import datetime as _dt
+                from db.models import TargetAllocationHistory
+                obj = st.session_state["dca_plan_obj"]
+                isa_mgr.record_target_allocation(TargetAllocationHistory(
+                    account_id=isa_account.id,
+                    set_date=_dt.today().strftime("%Y-%m-%d"),
+                    weights_json=obj["weights_json"],
+                    monthly_amount=obj["monthly_amount"],
+                    strategy=obj["strategy"],
+                    reason=f"DCA 추천 ({plan_data['risk_level']})",
+                ))
+                st.success("목표 비중 저장 완료 (target_allocation_history)")
+
+    st.divider()
+
+    # --- 기존 최적화 결과 기반 매수 가이드 ---
     if not holdings:
         st.info("포트폴리오에 종목을 추가하고 최적화를 실행하세요.")
     elif "optimization_result" not in st.session_state:
-        st.info("먼저 '최적화 결과' 탭에서 최적화를 실행하세요.")
+        st.info("'최적화 결과' 탭에서 최적화를 실행하면 추가 가이드가 표시됩니다.")
     else:
         result = st.session_state["optimization_result"]
 
-        st.subheader(f"예산 {budget:,.0f}원 매수 가이드")
+        st.subheader(f"최적화 기반 매수 가이드 (사이드바 예산 {budget:,.0f}원)")
 
         buy_guide = result.get("buy_guide", {})
         if buy_guide:

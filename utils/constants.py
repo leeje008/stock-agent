@@ -50,6 +50,23 @@ DEFAULT_RISK_FREE_RATE = 0.04
 BL_TAU = 0.05
 INVESTABLE_SAVINGS_RATIO = 0.5
 
+# ISA defaults (한국 ISA 일반형 기준)
+ISA_ANNUAL_LIMIT = 24_000_000   # 연간 납입 한도
+ISA_TAX_OPTIONS = ["general", "flexible", "reborn"]  # 일반형 / 중개형 / 서민형 등 분류 placeholder
+
+# DCA risk-level → S&P : NASDAQ 비중 매핑 (보수적일수록 S&P 비중↑)
+DCA_PRESET_2ASSET = {
+    "매우 보수적": (0.70, 0.30),
+    "보수적":     (0.60, 0.40),
+    "중립":       (0.55, 0.45),
+    "공격적":     (0.45, 0.55),
+    "매우 공격적": (0.35, 0.65),
+}
+
+# Common S&P 500 / NASDAQ 100 ETF tickers (KR 상장 + US 상장)
+SP500_TICKERS = {"VOO", "SPY", "IVV", "360750", "379800", "143850", "458730", "360200", "379810"}
+NASDAQ100_TICKERS = {"QQQ", "QQQM", "133690", "364690", "411060", "381170", "381180", "473460"}
+
 # Disclaimer
 DISCLAIMER = (
     "본 정보는 투자 권유가 아니며, 투자 결정의 책임은 사용자에게 있습니다. "

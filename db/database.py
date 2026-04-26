@@ -144,6 +144,44 @@ def init_db():
             note TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS isa_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_name TEXT NOT NULL UNIQUE,
+            monthly_contribution REAL NOT NULL DEFAULT 1000000,
+            risk_level TEXT NOT NULL DEFAULT '중립',
+            start_date TEXT,
+            annual_limit REAL NOT NULL DEFAULT 24000000,
+            tax_status TEXT NOT NULL DEFAULT 'general',
+            note TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS monthly_contributions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            year_month TEXT NOT NULL,
+            amount REAL NOT NULL,
+            note TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(account_id, year_month),
+            FOREIGN KEY (account_id) REFERENCES isa_accounts(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS target_allocation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            set_date TEXT NOT NULL,
+            weights_json TEXT NOT NULL,
+            monthly_amount REAL NOT NULL,
+            strategy TEXT NOT NULL,
+            reason TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (account_id) REFERENCES isa_accounts(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_contrib_yyyymm ON monthly_contributions(year_month);
+        CREATE INDEX IF NOT EXISTS idx_target_setdate ON target_allocation_history(set_date);
     """)
 
     # 기존 transactions 테이블 확장
