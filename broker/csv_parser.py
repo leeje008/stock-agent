@@ -1,6 +1,7 @@
 import pandas as pd
 import io
-from datetime import datetime
+
+from utils.csv_utils import parse_date, parse_number, read_csv_with_fallback
 
 
 class BrokerCSVParser:
@@ -88,18 +89,11 @@ class BrokerCSVParser:
         if filename.endswith((".xlsx", ".xls")):
             df = pd.read_excel(io.BytesIO(file_data), skiprows=fmt["skiprows"])
         else:
-            # Try specified encoding, fallback to utf-8, then cp949
-            for try_enc in [enc, "utf-8", "cp949", "euc-kr"]:
-                try:
-                    df = pd.read_csv(
-                        io.BytesIO(file_data),
-                        encoding=try_enc,
-                        skiprows=fmt["skiprows"],
-                    )
-                    break
-                except (UnicodeDecodeError, pd.errors.ParserError):
-                    continue
-            else:
+            # Try specified encoding first, then common Korean fallbacks
+            df = read_csv_with_fallback(
+                file_data, [enc, "utf-8", "cp949", "euc-kr"], skiprows=fmt["skiprows"]
+            )
+            if df is None:
                 raise ValueError("파일 인코딩을 인식할 수 없습니다.")
 
         # Auto-detect columns if exact match not found
@@ -213,49 +207,24 @@ class BrokerCSVParser:
         return mapping
 
     def _parse_date(self, value, date_format: str) -> str:
-        """다양한 날짜 형식을 YYYY-MM-DD로 변환"""
-        if isinstance(value, datetime):
-            return value.strftime("%Y-%m-%d")
-        if isinstance(value, pd.Timestamp):
-            return value.strftime("%Y-%m-%d")
-
-        s = str(value).strip()
-        # Try the specified format first
-        for fmt in [date_format, "%Y%m%d", "%Y-%m-%d", "%Y.%m.%d", "%Y/%m/%d"]:
-            try:
-                return datetime.strptime(s[:10], fmt).strftime("%Y-%m-%d")
-            except ValueError:
-                continue
-        return s[:10]
+        """다양한 날짜 형식을 YYYY-MM-DD로 변환 (utils.csv_utils 위임)"""
+        return parse_date(value, date_format)
 
     @staticmethod
     def _parse_number(value) -> float:
-        """문자열/숫자를 float로 변환 (쉼표 제거 등)"""
-        if pd.isna(value):
-            return 0.0
-        if isinstance(value, (int, float)):
-            return float(value)
-        s = str(value).strip().replace(",", "").replace(" ", "")
-        try:
-            return float(s)
-        except ValueError:
-            return 0.0
+        """문자열/숫자를 float로 변환 (utils.csv_utils 위임)"""
+        return parse_number(value)
 
     @classmethod
     def detect_broker(cls, file_data: bytes, filename: str) -> str:
         """CSV 컬럼명으로 증권사 자동 감지"""
-        # Try reading with multiple encodings to get column names
-        import io
-        df = None
-        for enc in ["utf-8", "cp949", "euc-kr"]:
+        if filename.endswith((".xlsx", ".xls")):
             try:
-                if filename.endswith((".xlsx", ".xls")):
-                    df = pd.read_excel(io.BytesIO(file_data), nrows=0)
-                else:
-                    df = pd.read_csv(io.BytesIO(file_data), encoding=enc, nrows=0)
-                break
+                df = pd.read_excel(io.BytesIO(file_data), nrows=0)
             except Exception:
-                continue
+                df = None
+        else:
+            df = read_csv_with_fallback(file_data, nrows=0)
 
         if df is None:
             return "범용 (직접입력)"

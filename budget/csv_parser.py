@@ -1,6 +1,7 @@
 import pandas as pd
 import io
-from datetime import datetime
+
+from utils.csv_utils import parse_date, parse_number, read_csv_with_fallback
 
 
 CATEGORY_KEYWORDS = {
@@ -85,16 +86,13 @@ class BankCSVParser:
     @classmethod
     def detect_bank(cls, file_data: bytes, filename: str) -> str:
         """CSV 컬럼명으로 은행/카드 자동 감지"""
-        df = None
-        for enc in ["utf-8", "cp949", "euc-kr"]:
+        if filename.endswith((".xlsx", ".xls")):
             try:
-                if filename.endswith((".xlsx", ".xls")):
-                    df = pd.read_excel(io.BytesIO(file_data), nrows=0)
-                else:
-                    df = pd.read_csv(io.BytesIO(file_data), encoding=enc, nrows=0)
-                break
+                df = pd.read_excel(io.BytesIO(file_data), nrows=0)
             except Exception:
-                continue
+                df = None
+        else:
+            df = read_csv_with_fallback(file_data, nrows=0)
 
         if df is None:
             return "범용"
@@ -127,12 +125,7 @@ class BankCSVParser:
         if filename.endswith((".xlsx", ".xls")):
             df = pd.read_excel(io.BytesIO(file_data))
         else:
-            for try_enc in [enc, "utf-8", "cp949", "euc-kr"]:
-                try:
-                    df = pd.read_csv(io.BytesIO(file_data), encoding=try_enc)
-                    break
-                except Exception:
-                    continue
+            df = read_csv_with_fallback(file_data, [enc, "utf-8", "cp949", "euc-kr"])
 
         if df is None or df.empty:
             return []
@@ -226,27 +219,13 @@ class BankCSVParser:
         return "기타지출"
 
     def _parse_date(self, value, date_format: str) -> str:
-        if isinstance(value, (datetime, pd.Timestamp)):
-            return value.strftime("%Y-%m-%d")
-        s = str(value).strip()
-        for fmt in [date_format, "%Y%m%d", "%Y-%m-%d", "%Y.%m.%d", "%Y/%m/%d"]:
-            try:
-                return datetime.strptime(s[:10], fmt).strftime("%Y-%m-%d")
-            except ValueError:
-                continue
-        return s[:10]
+        """utils.csv_utils 위임"""
+        return parse_date(value, date_format)
 
     @staticmethod
     def _parse_number(value) -> float:
-        if pd.isna(value):
-            return 0.0
-        if isinstance(value, (int, float)):
-            return float(value)
-        s = str(value).strip().replace(",", "").replace(" ", "")
-        try:
-            return float(s)
-        except ValueError:
-            return 0.0
+        """utils.csv_utils 위임"""
+        return parse_number(value)
 
     @staticmethod
     def get_bank_list() -> list[str]:
