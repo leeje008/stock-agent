@@ -92,6 +92,20 @@ class TechnicalAnalyzer:
         return (direction * volume).fillna(0).cumsum()
 
     @staticmethod
+    def _is_bull(s: str) -> bool:
+        """신호 문자열이 강세인지. "과매수"는 "매수"를 포함하므로 먼저 배제한다."""
+        if "과매수" in s:
+            return False
+        return "과매도" in s or "매수" in s or "위" in s or "매집" in s
+
+    @staticmethod
+    def _is_bear(s: str) -> bool:
+        """신호 문자열이 약세인지. "과매도"는 "매도"를 포함하므로 먼저 배제한다."""
+        if "과매도" in s:
+            return False
+        return "과매수" in s or "매도" in s or "아래" in s or "돌파" in s or "분산" in s
+
+    @staticmethod
     def get_signal_summary(
         prices: pd.Series,
         high: pd.Series | None = None,
@@ -162,9 +176,9 @@ class TechnicalAnalyzer:
                     obv_trend = "하락"
                     signals.append("OBV 분산")
 
-        # Determine overall signal
-        bullish = sum(1 for s in signals if "매수" in s or "과매도" in s or "위" in s or "매집" in s)
-        bearish = sum(1 for s in signals if "매도" in s or "과매수" in s or "아래" in s or "돌파" in s or "분산" in s)
+        # Determine overall signal (부분문자열 오탐 방지)
+        bullish = sum(1 for s in signals if TechnicalAnalyzer._is_bull(s))
+        bearish = sum(1 for s in signals if TechnicalAnalyzer._is_bear(s))
 
         if bullish > bearish:
             overall = "매수 우위"
