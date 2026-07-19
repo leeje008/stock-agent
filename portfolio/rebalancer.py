@@ -1,8 +1,34 @@
+import pandas as pd
+
 from db.database import get_connection
 
 
 class Rebalancer:
     """포트폴리오 리밸런싱 관리"""
+
+    @staticmethod
+    def compute_current_weights(portfolio_df: pd.DataFrame) -> dict[str, float]:
+        """평가금액(원) 기준 현재 종목 비중 dict 반환"""
+        if portfolio_df is None or portfolio_df.empty:
+            return {}
+        if "티커" not in portfolio_df.columns or "평가금액(원)" not in portfolio_df.columns:
+            return {}
+        total = portfolio_df["평가금액(원)"].sum()
+        if total <= 0:
+            return {}
+        weights: dict[str, float] = {}
+        for _, row in portfolio_df.iterrows():
+            weights[row["티커"]] = float(row["평가금액(원)"]) / float(total)
+        return weights
+
+    def alerts_from_portfolio(
+        self, portfolio_df: pd.DataFrame, threshold: float = 0.05
+    ) -> list[dict]:
+        """포트폴리오 DataFrame에서 목표 대비 이탈(drift) 알림 산출"""
+        current = self.compute_current_weights(portfolio_df)
+        if not current:
+            return []
+        return self.check_drift(current, threshold)
 
     def save_targets(self, weights: dict[str, float], strategy: str):
         """최적화 결과를 목표 비중으로 저장"""
