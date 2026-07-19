@@ -20,8 +20,32 @@ class PortfolioOptimizer:
         self.mu = expected_returns.ema_historical_return(price_data, span=126)
         self.cov = risk_models.CovarianceShrinkage(price_data).ledoit_wolf()
 
-    def optimize_max_sharpe(self, risk_free_rate: float = DEFAULT_RISK_FREE_RATE) -> OptimizationResult:
+    def _apply_sector_constraints(
+        self,
+        ef: EfficientFrontier,
+        sector_map: dict[str, str] | None,
+        sector_upper: dict[str, float] | None,
+    ) -> None:
+        """섹터별 비중 상한 제약을 EfficientFrontier에 적용 (인자 제공 시)"""
+        if not sector_map or not sector_upper:
+            return
+        # price_data에 존재하는 종목만 매핑
+        mapper = {t: sector_map[t] for t in self.prices.columns if t in sector_map}
+        if not mapper:
+            return
+        upper = {s: w for s, w in sector_upper.items() if s in set(mapper.values())}
+        if not upper:
+            return
+        ef.add_sector_constraints(mapper, sector_lower={}, sector_upper=upper)
+
+    def optimize_max_sharpe(
+        self,
+        risk_free_rate: float = DEFAULT_RISK_FREE_RATE,
+        sector_map: dict[str, str] | None = None,
+        sector_upper: dict[str, float] | None = None,
+    ) -> OptimizationResult:
         ef = EfficientFrontier(self.mu, self.cov)
+        self._apply_sector_constraints(ef, sector_map, sector_upper)
         ef.max_sharpe(risk_free_rate=risk_free_rate)
         cleaned = ef.clean_weights()
         perf = ef.portfolio_performance(verbose=False, risk_free_rate=risk_free_rate)
@@ -33,8 +57,13 @@ class PortfolioOptimizer:
             sharpe_ratio=perf[2],
         )
 
-    def optimize_min_volatility(self) -> OptimizationResult:
+    def optimize_min_volatility(
+        self,
+        sector_map: dict[str, str] | None = None,
+        sector_upper: dict[str, float] | None = None,
+    ) -> OptimizationResult:
         ef = EfficientFrontier(self.mu, self.cov)
+        self._apply_sector_constraints(ef, sector_map, sector_upper)
         ef.min_volatility()
         cleaned = ef.clean_weights()
         perf = ef.portfolio_performance(verbose=False)

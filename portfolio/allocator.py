@@ -1,6 +1,5 @@
 from data.fetcher import StockDataFetcher
 from portfolio.optimizer import PortfolioOptimizer
-from db.models import OptimizationResult
 
 
 class BudgetAllocator:
@@ -15,11 +14,14 @@ class BudgetAllocator:
         budget: float,
         strategy: str = "max_sharpe",
         period: str = "1y",
+        sector_map: dict[str, str] | None = None,
+        sector_upper: dict[str, float] | None = None,
     ) -> dict:
         """
         tickers: [{"ticker": "AAPL", "market": "US"}, ...]
         budget: 투자 가능 예산
         strategy: max_sharpe | min_volatility
+        sector_map/sector_upper: 섹터 비중 상한 제약 (max_sharpe/min_volatility 에만 적용)
         """
         prices = self.fetcher.get_multiple_prices(tickers, period)
         if prices.empty or len(prices.columns) < 2:
@@ -28,9 +30,13 @@ class BudgetAllocator:
         optimizer = PortfolioOptimizer(prices)
 
         if strategy == "max_sharpe":
-            result = optimizer.optimize_max_sharpe()
+            result = optimizer.optimize_max_sharpe(
+                sector_map=sector_map, sector_upper=sector_upper
+            )
         elif strategy == "min_volatility":
-            result = optimizer.optimize_min_volatility()
+            result = optimizer.optimize_min_volatility(
+                sector_map=sector_map, sector_upper=sector_upper
+            )
         elif strategy == "hrp":
             result = optimizer.optimize_hrp()
         elif strategy == "min_cvar":
