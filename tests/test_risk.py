@@ -46,3 +46,51 @@ def test_hhi_bounds():
     assert risk.herfindahl_index({}) == 0.0
     single = risk.herfindahl_index({"AAA": 1.0})
     assert abs(single - 1.0) < 1e-9
+
+
+def test_parametric_and_mc_var_positive():
+    prices = _prices()
+    w = {"AAA": 0.4, "BBB": 0.3, "CCC": 0.3}
+    pv = risk.parametric_var(prices, w, alpha=0.95)
+    mv = risk.monte_carlo_var(prices, w, alpha=0.95, n_sims=5000)
+    hv = risk.portfolio_var(prices, w, alpha=0.95)
+    assert pv >= 0.0 and mv >= 0.0 and hv >= 0.0
+    # 세 방식이 같은 규모(자릿수)여야 한다
+    assert abs(pv - mv) < 0.02
+    assert abs(pv - hv) < 0.03
+
+
+def test_var_empty_data_zero():
+    empty = __import__("pandas").DataFrame()
+    assert risk.parametric_var(empty, {"AAA": 1.0}) == 0.0
+    assert risk.monte_carlo_var(empty, {"AAA": 1.0}) == 0.0
+
+
+def test_stress_scenarios():
+    rows = risk.stress_scenarios(1_000_000, [-0.1, -0.2])
+    assert len(rows) == 2
+    assert rows[0]["loss_amount"] == 100_000.0
+    assert rows[1]["loss_amount"] == 200_000.0
+    # 기본 시나리오
+    assert len(risk.stress_scenarios(1000)) == 4
+
+
+def test_portfolio_beta():
+    import numpy as np
+    import pandas as pd
+    prices = _prices()
+    w = {"AAA": 0.4, "BBB": 0.3, "CCC": 0.3}
+    pr = risk.portfolio_returns(prices, w)
+    # 벤치마크 = 포트폴리오 자신 → 베타 ≈ 1
+    beta_self = risk.portfolio_beta(prices, w, pr)
+    assert abs(beta_self - 1.0) < 1e-6
+    # 무관한 벤치마크(0 분산 아님) → 유한값
+    rng = np.random.default_rng(7)
+    bench = pd.Series(rng.normal(0, 0.01, len(pr)), index=pr.index)
+    beta = risk.portfolio_beta(prices, w, bench)
+    assert np.isfinite(beta)
+
+
+def test_portfolio_beta_empty():
+    import pandas as pd
+    assert risk.portfolio_beta(_prices(), {"AAA": 1.0}, pd.Series(dtype=float)) == 0.0
