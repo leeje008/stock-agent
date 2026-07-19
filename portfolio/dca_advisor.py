@@ -7,9 +7,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
 
-import pandas as pd
 
 from data.fetcher import StockDataFetcher
 from portfolio.optimizer import PortfolioOptimizer
@@ -88,7 +86,6 @@ class DcaAdvisor:
         if monthly_amount <= 0:
             raise ValueError("monthly_amount > 0 필요")
 
-        n = len(tickers)
         weights, strategy, rationale = self._decide_weights(tickers, risk_level, lookback)
 
         fx = get_usd_krw_rate()

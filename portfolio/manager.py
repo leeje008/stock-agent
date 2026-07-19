@@ -1,5 +1,3 @@
-import json
-import sqlite3
 
 from db.database import get_connection
 from db.models import Holding, Transaction

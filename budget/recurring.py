@@ -1,4 +1,3 @@
-from datetime import date
 from db.database import get_connection
 from budget.models import BudgetEntry
 from budget.manager import BudgetManager

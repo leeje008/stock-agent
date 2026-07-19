@@ -1,5 +1,4 @@
 """ISA account, monthly contribution, target allocation history CRUD."""
-import json
 from datetime import datetime
 
 from db.database import get_connection
