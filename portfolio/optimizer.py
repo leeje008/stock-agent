@@ -43,8 +43,11 @@ class PortfolioOptimizer:
         risk_free_rate: float = DEFAULT_RISK_FREE_RATE,
         sector_map: dict[str, str] | None = None,
         sector_upper: dict[str, float] | None = None,
+        weight_bounds: tuple[float, float] | None = None,
     ) -> OptimizationResult:
-        ef = EfficientFrontier(self.mu, self.cov)
+        ef = EfficientFrontier(
+            self.mu, self.cov, weight_bounds=weight_bounds or (0, 1)
+        )
         self._apply_sector_constraints(ef, sector_map, sector_upper)
         ef.max_sharpe(risk_free_rate=risk_free_rate)
         cleaned = ef.clean_weights()
@@ -61,8 +64,11 @@ class PortfolioOptimizer:
         self,
         sector_map: dict[str, str] | None = None,
         sector_upper: dict[str, float] | None = None,
+        weight_bounds: tuple[float, float] | None = None,
     ) -> OptimizationResult:
-        ef = EfficientFrontier(self.mu, self.cov)
+        ef = EfficientFrontier(
+            self.mu, self.cov, weight_bounds=weight_bounds or (0, 1)
+        )
         self._apply_sector_constraints(ef, sector_map, sector_upper)
         ef.min_volatility()
         cleaned = ef.clean_weights()
