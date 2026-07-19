@@ -20,3 +20,9 @@ dependencies = [
     "feedparser>=6.0",
     "setuptools<82",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.15.22",
+]
