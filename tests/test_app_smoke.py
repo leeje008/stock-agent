@@ -60,6 +60,21 @@ def patched(monkeypatch):
     yield
 
 
+def test_backtest_tab_renders_results(patched):
+    # 백테스트 결과를 미리 세션에 넣어 롤링 차트 렌더 경로(중복 key 포함)를 검증
+    from analysis.backtest import Backtester
+    from streamlit.testing.v1 import AppTest
+    prices = _multi([{"ticker": "AAA"}, {"ticker": "BBB"}, {"ticker": "CCC"}], seed=3)
+    results = Backtester(prices).compare_strategies(
+        strategies=["max_sharpe", "equal_weight"],
+        lookback_days=120, rebalance_days=40, cost_bps=10.0,
+    )
+    at = AppTest.from_file("app.py", default_timeout=90)
+    at.session_state["backtest_results"] = results
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+
+
 def test_app_runs_with_holdings(patched):
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file("app.py", default_timeout=90)

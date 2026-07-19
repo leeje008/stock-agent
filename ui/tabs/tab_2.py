@@ -29,6 +29,18 @@ def render(ctx):
             )
             st.caption(f"감지된 섹터: {', '.join(sectors)}")
 
+        # 종목별 최소/최대 비중 제약 (max_sharpe / min_volatility 전략에 적용)
+        use_weight_bounds = st.checkbox(
+            "종목 비중 상·하한 제약 적용", value=False, key="use_weight_bounds",
+            help="각 종목의 비중이 지정한 최소~최대 범위를 벗어나지 않도록 제한합니다.",
+        )
+        wb_min, wb_max = 0, 100
+        if use_weight_bounds:
+            wb_min, wb_max = st.slider(
+                "종목별 비중 범위 (%)", min_value=0, max_value=100, value=(0, 40), step=5,
+                key="weight_bounds_range",
+            )
+
         if st.button("최적화 실행", type="primary"):
             tickers = [{"ticker": h.ticker, "market": h.market} for h in holdings]
             allocator = BudgetAllocator()
@@ -39,6 +51,11 @@ def render(ctx):
             if use_sector_cap:
                 sector_map = {h.ticker: (h.sector or "기타") for h in holdings}
                 sector_upper = {s: sector_cap_pct / 100.0 for s in sectors}
+
+            # 종목 비중 상·하한 구성
+            weight_bounds = None
+            if use_weight_bounds:
+                weight_bounds = (wb_min / 100.0, wb_max / 100.0)
 
             strat_map = {
                 "최대 샤프 비율": "max_sharpe",
@@ -89,10 +106,20 @@ def render(ctx):
                     except Exception as e:
                         st.error(f"Black-Litterman 최적화 실패: {e}")
                 else:
-                    result = allocator.generate_buy_guide(
-                        tickers, budget, strategy=strat,
-                        sector_map=sector_map, sector_upper=sector_upper,
-                    )
+                    try:
+                        result = allocator.generate_buy_guide(
+                            tickers, budget, strategy=strat,
+                            sector_map=sector_map, sector_upper=sector_upper,
+                            weight_bounds=weight_bounds,
+                        )
+                    except Exception as e:
+                        result = {
+                            "error": (
+                                "제약 조건으로는 최적 포트폴리오를 찾을 수 없습니다. "
+                                "섹터 상한이나 종목 비중 범위를 완화해 주세요. "
+                                f"(상세: {e})"
+                            )
+                        }
                     if "error" in result:
                         st.error(result["error"])
                     else:

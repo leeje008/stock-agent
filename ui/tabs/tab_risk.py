@@ -53,6 +53,53 @@ def render(ctx):
             f"약 {total_value * var95:,.0f}원 · 꼬리손실(CVaR): 약 {total_value * cvar95:,.0f}원"
         )
 
+        # VaR 방법론 3종 병기
+        pvar = risk.parametric_var(prices, weights, alpha=0.95)
+        mvar = risk.monte_carlo_var(prices, weights, alpha=0.95)
+        st.markdown("**VaR 방법론 비교 (1일, 95%)**")
+        vcol1, vcol2, vcol3 = st.columns(3)
+        vcol1.metric("히스토리컬", f"{var95:.2%}", help="실제 과거 수익률 분포의 5% 분위수")
+        vcol2.metric("파라메트릭", f"{pvar:.2%}", help="정규분포 가정(평균·표준편차) 기반")
+        vcol3.metric("몬테카를로", f"{mvar:.2%}", help="정규분포 파라미터로 1만회 시뮬레이션")
+
+        # 시장충격 스트레스 시나리오
+        st.markdown("### 시장충격 스트레스 시나리오")
+        stress = risk.stress_scenarios(total_value, [-0.05, -0.10, -0.20, -0.30])
+        stress_df = pd.DataFrame([
+            {
+                "시장충격": f"{s['shock']:.0%}",
+                "예상 손실률": f"{s['loss_pct']:.0%}",
+                "예상 손실금액(원)": f"{s['loss_amount']:,.0f}",
+            }
+            for s in stress
+        ])
+        st.dataframe(stress_df, use_container_width=True, hide_index=True)
+        st.caption("포트폴리오가 시장과 동일하게 움직인다고 가정한 단순 충격 시나리오입니다.")
+
+    # === 벤치마크 대비 베타 ===
+    st.markdown("### 벤치마크 대비 베타")
+    if prices.empty or len(prices.columns) < 1:
+        st.caption("베타 계산을 위한 시세 데이터가 부족합니다.")
+    else:
+        bench_options = {"S&P500 (^GSPC)": "^GSPC", "NASDAQ100 (^NDX)": "^NDX", "KOSPI (^KS11)": "^KS11"}
+        bench_label = st.selectbox("벤치마크 선택", list(bench_options), index=0, key="risk_benchmark")
+        bench_ticker = bench_options[bench_label]
+        try:
+            bench_df = fetcher.get_price_data(bench_ticker, "US", period="1y")
+            if bench_df.empty:
+                st.caption("벤치마크 시세를 가져올 수 없습니다.")
+            else:
+                close_col = "Close" if "Close" in bench_df.columns else "종가"
+                bench_returns = bench_df[close_col].pct_change().dropna()
+                beta = risk.portfolio_beta(prices, weights, bench_returns)
+                b1, b2 = st.columns(2)
+                b1.metric(f"베타 (vs {bench_label})", f"{beta:.2f}",
+                          help="1보다 크면 시장보다 변동성이 큼, 작으면 방어적")
+                interp = "시장보다 공격적" if beta > 1.05 else ("시장보다 방어적" if beta < 0.95 else "시장과 유사")
+                b2.metric("해석", interp)
+        except Exception as e:
+            st.caption(f"베타 계산 실패: {e}")
+
     # === 상관관계 히트맵 ===
     st.markdown("### 종목 간 상관관계")
     if prices.empty or len(prices.columns) < 2:
