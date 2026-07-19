@@ -105,12 +105,26 @@ class Backtester:
         drawdowns = (equity - rolling_max) / rolling_max
         max_dd = float(drawdowns.min())
 
+        # Sortino ratio — 하방 변동성만 위험으로 간주
+        downside = daily_returns[daily_returns < 0]
+        downside_dev = float(downside.std() * np.sqrt(252)) if len(downside) > 1 else 0.0
+        sortino = float(annualized_return / downside_dev) if downside_dev > 0 else 0.0
+
+        # Calmar ratio — 연환산수익률 / 최대낙폭
+        calmar = float(annualized_return / abs(max_dd)) if max_dd < 0 else 0.0
+
+        # Win rate — 양(+) 일수익 비율
+        win_rate = float((daily_returns > 0).mean()) if len(daily_returns) > 0 else 0.0
+
         return {
             "equity_curve": equity,
             "total_return": float(total_return),
             "annualized_return": float(annualized_return),
             "volatility": vol,
             "sharpe_ratio": sharpe,
+            "sortino_ratio": sortino,
+            "calmar_ratio": calmar,
+            "win_rate": win_rate,
             "max_drawdown": max_dd,
             "strategy": strategy,
         }
