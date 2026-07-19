@@ -44,7 +44,60 @@ class TechnicalAnalyzer:
         }
 
     @staticmethod
-    def get_signal_summary(prices: pd.Series) -> dict:
+    def stochastic(
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        k_period: int = 14,
+        d_period: int = 3,
+    ) -> dict:
+        """Stochastic Oscillator (%K, %D). 과매수(>80)/과매도(<20) 판단"""
+        lowest_low = low.rolling(window=k_period).min()
+        highest_high = high.rolling(window=k_period).max()
+        rng = (highest_high - lowest_low).replace(0, np.nan)
+        percent_k = 100 * (close - lowest_low) / rng
+        percent_d = percent_k.rolling(window=d_period).mean()
+        return {"k": percent_k, "d": percent_d}
+
+    @staticmethod
+    def ichimoku(
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        conversion: int = 9,
+        base: int = 26,
+        span_b: int = 52,
+    ) -> dict:
+        """일목균형표 (Ichimoku Cloud)"""
+        def _mid(period: int) -> pd.Series:
+            return (high.rolling(period).max() + low.rolling(period).min()) / 2
+
+        tenkan = _mid(conversion)
+        kijun = _mid(base)
+        senkou_a = ((tenkan + kijun) / 2).shift(base)
+        senkou_b = _mid(span_b).shift(base)
+        chikou = close.shift(-base)
+        return {
+            "tenkan": tenkan,       # 전환선
+            "kijun": kijun,         # 기준선
+            "senkou_a": senkou_a,   # 선행스팬 A
+            "senkou_b": senkou_b,   # 선행스팬 B
+            "chikou": chikou,       # 후행스팬
+        }
+
+    @staticmethod
+    def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
+        """On-Balance Volume — 거래량 기반 매집/분산 추세"""
+        direction = np.sign(close.diff().fillna(0))
+        return (direction * volume).fillna(0).cumsum()
+
+    @staticmethod
+    def get_signal_summary(
+        prices: pd.Series,
+        high: pd.Series | None = None,
+        low: pd.Series | None = None,
+        volume: pd.Series | None = None,
+    ) -> dict:
         """종합 기술적 신호 요약"""
         if len(prices) < 30:
             return {"signal": "데이터 부족", "details": {}}
@@ -83,9 +136,35 @@ class TechnicalAnalyzer:
         else:
             signals.append("20일선 아래")
 
+        # Stochastic (고가/저가 제공 시)
+        stoch_k = None
+        if high is not None and low is not None and len(prices) >= 14:
+            stoch = TechnicalAnalyzer.stochastic(high, low, prices)
+            k_series = stoch["k"].dropna()
+            if not k_series.empty:
+                stoch_k = float(k_series.iloc[-1])
+                if stoch_k > 80:
+                    signals.append("스토캐스틱 과매수")
+                elif stoch_k < 20:
+                    signals.append("스토캐스틱 과매도")
+
+        # OBV 추세 (거래량 제공 시)
+        obv_trend = None
+        if volume is not None and len(prices) >= 20:
+            obv_series = TechnicalAnalyzer.obv(prices, volume)
+            if len(obv_series) >= 6:
+                recent = obv_series.iloc[-5:].mean()
+                prev = obv_series.iloc[-10:-5].mean() if len(obv_series) >= 10 else obv_series.iloc[0]
+                if recent > prev:
+                    obv_trend = "상승"
+                    signals.append("OBV 매집")
+                else:
+                    obv_trend = "하락"
+                    signals.append("OBV 분산")
+
         # Determine overall signal
-        bullish = sum(1 for s in signals if "매수" in s or "과매도" in s or "위" in s)
-        bearish = sum(1 for s in signals if "매도" in s or "과매수" in s or "아래" in s or "돌파" in s)
+        bullish = sum(1 for s in signals if "매수" in s or "과매도" in s or "위" in s or "매집" in s)
+        bearish = sum(1 for s in signals if "매도" in s or "과매수" in s or "아래" in s or "돌파" in s or "분산" in s)
 
         if bullish > bearish:
             overall = "매수 우위"
@@ -101,5 +180,7 @@ class TechnicalAnalyzer:
             "macd_signal": round(signal_val, 4),
             "bb_position": "상단" if current > bb_upper else ("하단" if current < bb_lower else "중간"),
             "price_vs_ma20": "위" if current > ma20 else "아래",
+            "stochastic_k": round(stoch_k, 2) if stoch_k is not None else None,
+            "obv_trend": obv_trend,
             "details": signals,
         }
