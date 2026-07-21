@@ -7,8 +7,65 @@ from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
+import streamlit as st
 
 from utils.fx import get_usd_krw_rate
+
+# 포트폴리오 평가 결과 캐시 TTL (초)
+PORTFOLIO_CACHE_TTL = 300
+
+
+@st.cache_data(ttl=PORTFOLIO_CACHE_TTL, show_spinner=False)
+def _build_portfolio_frame(holdings_key: tuple, _holdings, _fetcher) -> pd.DataFrame:
+    """보유종목에 현재가/환율을 적용한 DataFrame을 만든다 (캐시).
+
+    holdings_key 만 캐시 키로 사용하고, 언더스코어 인자(_holdings/_fetcher)는
+    Streamlit 해싱에서 제외한다.
+    """
+    fx_rate = get_usd_krw_rate()
+    rows = []
+    for h in _holdings:
+        current_price = None
+        try:
+            price_df = _fetcher.get_price_data(h.ticker, h.market, period="5d")
+            if not price_df.empty:
+                close_col = "Close" if "Close" in price_df.columns else "종가"
+                current_price = float(price_df[close_col].iloc[-1])
+        except Exception:
+            pass
+
+        price = current_price or h.avg_price
+        total_cost = h.avg_price * h.quantity
+        total_value = price * h.quantity
+
+        # KRW 환산
+        if h.currency == "USD":
+            total_cost_krw = total_cost * fx_rate
+            total_value_krw = total_value * fx_rate
+        else:
+            total_cost_krw = total_cost
+            total_value_krw = total_value
+
+        pnl_krw = total_value_krw - total_cost_krw
+        pnl_pct = (pnl_krw / total_cost_krw * 100) if total_cost_krw > 0 else 0
+
+        rows.append({
+            "ID": h.id,
+            "종목명": h.name,
+            "티커": h.ticker,
+            "시장": h.market,
+            "수량": h.quantity,
+            "평균매입가": h.avg_price,
+            "현재가": price,
+            "통화": h.currency,
+            "평가금액(원)": total_value_krw,
+            "매입금액(원)": total_cost_krw,
+            "손익(원)": pnl_krw,
+            "수익률(%)": round(pnl_pct, 2),
+            "섹터": h.sector or "N/A",
+        })
+
+    return pd.DataFrame(rows)
 
 
 @dataclass
@@ -25,52 +82,18 @@ class AppContext:
     strategy: str
 
     def load_portfolio_data(self):
-        """포트폴리오 데이터를 로드하고 현재가/환율을 적용한 DataFrame 반환"""
+        """포트폴리오 데이터를 로드하고 현재가/환율을 적용한 DataFrame 반환.
+
+        평가 결과는 보유종목 구성이 바뀌지 않는 한 캐시에서 재사용한다.
+        """
         holdings = self.pm.get_all_holdings()
         if not holdings:
             return holdings, pd.DataFrame()
 
-        fx_rate = get_usd_krw_rate()
-        rows = []
-        for h in holdings:
-            current_price = None
-            try:
-                price_df = self.fetcher.get_price_data(h.ticker, h.market, period="5d")
-                if not price_df.empty:
-                    close_col = "Close" if "Close" in price_df.columns else "종가"
-                    current_price = float(price_df[close_col].iloc[-1])
-            except Exception:
-                pass
-
-            price = current_price or h.avg_price
-            total_cost = h.avg_price * h.quantity
-            total_value = price * h.quantity
-
-            # KRW 환산
-            if h.currency == "USD":
-                total_cost_krw = total_cost * fx_rate
-                total_value_krw = total_value * fx_rate
-            else:
-                total_cost_krw = total_cost
-                total_value_krw = total_value
-
-            pnl_krw = total_value_krw - total_cost_krw
-            pnl_pct = (pnl_krw / total_cost_krw * 100) if total_cost_krw > 0 else 0
-
-            rows.append({
-                "ID": h.id,
-                "종목명": h.name,
-                "티커": h.ticker,
-                "시장": h.market,
-                "수량": h.quantity,
-                "평균매입가": h.avg_price,
-                "현재가": price,
-                "통화": h.currency,
-                "평가금액(원)": total_value_krw,
-                "매입금액(원)": total_cost_krw,
-                "손익(원)": pnl_krw,
-                "수익률(%)": round(pnl_pct, 2),
-                "섹터": h.sector or "N/A",
-            })
-
-        return holdings, pd.DataFrame(rows)
+        # 출력 컬럼에 쓰이는 필드는 모두 캐시 키에 포함해야 종목 수정 시 무효화된다
+        holdings_key = tuple(
+            (h.id, h.ticker, h.market, h.quantity, h.avg_price, h.currency,
+             h.name, h.sector)
+            for h in holdings
+        )
+        return holdings, _build_portfolio_frame(holdings_key, holdings, self.fetcher)

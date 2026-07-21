@@ -4,6 +4,7 @@ import plotly.express as px
 
 from analysis import risk
 from portfolio.rebalancer import Rebalancer
+from ui.data_cache import get_multiple_prices_cached, get_price_data_cached, tickers_to_key
 
 
 def render(ctx):
@@ -28,10 +29,9 @@ def render(ctx):
         st.warning("평가금액 데이터가 부족합니다.")
         return
 
-    # 시세(종가) 수집 → VaR/CVaR/상관
-    tickers = [{"ticker": h.ticker, "market": h.market} for h in holdings]
+    # 시세(종가) 수집 → VaR/CVaR/상관 (매 재실행마다 도는 경로이므로 캐시 사용)
     with st.spinner("시세 데이터 수집 중..."):
-        prices = fetcher.get_multiple_prices(tickers, "1y")
+        prices = get_multiple_prices_cached(tickers_to_key(holdings), "1y", _fetcher=fetcher)
 
     # === VaR / CVaR ===
     st.markdown("### 손실 위험 (Historical VaR / CVaR, 95%)")
@@ -85,7 +85,7 @@ def render(ctx):
         bench_label = st.selectbox("벤치마크 선택", list(bench_options), index=0, key="risk_benchmark")
         bench_ticker = bench_options[bench_label]
         try:
-            bench_df = fetcher.get_price_data(bench_ticker, "US", period="1y")
+            bench_df = get_price_data_cached(bench_ticker, "US", "1y", _fetcher=fetcher)
             if bench_df.empty:
                 st.caption("벤치마크 시세를 가져올 수 없습니다.")
             else:

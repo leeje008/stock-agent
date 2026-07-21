@@ -57,7 +57,11 @@ def patched(monkeypatch):
     # context 모듈은 fx 심볼을 직접 import 하므로 그쪽도 패치
     import ui.context as ctxmod
     monkeypatch.setattr(ctxmod, "get_usd_krw_rate", lambda: 1350.0)
+    # Streamlit 캐시가 테스트 간 결과를 오염시키지 않도록 초기화
+    import streamlit as st
+    st.cache_data.clear()
     yield
+    st.cache_data.clear()
 
 
 def test_backtest_tab_renders_results(patched):

@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from analysis.technical import TechnicalAnalyzer
+from ui.data_cache import get_multiple_prices_cached, get_price_data_cached, tickers_to_key
 
 
 def render(ctx):
@@ -26,7 +27,7 @@ def render(ctx):
             period = st.selectbox("분석 기간", ["6mo", "1y", "2y"], index=1)
 
             try:
-                price_df = fetcher.get_price_data(ticker, market, period=period)
+                price_df = get_price_data_cached(ticker, market, period, _fetcher=fetcher)
                 if price_df.empty:
                     st.warning(f"{ticker}의 시세 데이터를 가져올 수 없습니다.")
                 else:
@@ -184,8 +185,7 @@ def render(ctx):
         st.divider()
         st.subheader("종목 간 상관관계")
         try:
-            corr_tickers = [{"ticker": h.ticker, "market": h.market} for h in holdings]
-            corr_prices = fetcher.get_multiple_prices(corr_tickers, "1y")
+            corr_prices = get_multiple_prices_cached(tickers_to_key(holdings), "1y", _fetcher=fetcher)
             if not corr_prices.empty and len(corr_prices.columns) >= 2:
                 corr_matrix = market_proc.calculate_correlation(corr_prices)
                 # 티커 → 종목명 매핑
