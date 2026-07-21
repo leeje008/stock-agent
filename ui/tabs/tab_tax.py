@@ -20,7 +20,11 @@ def render(ctx):
     st.markdown("### 실현손익 (거래내역 기반)")
     # 실현손익은 전체 이력이 거래일 순으로 필요하다 (이동평균 원가)
     transactions = pm.get_all_transactions()
-    realized = tax_calc.realized_pnl_from_transactions(transactions)
+    try:
+        fx_rate = get_usd_krw_rate()
+    except Exception:
+        fx_rate = 1350.0
+    realized = tax_calc.realized_pnl_from_transactions(transactions, fx_rate=fx_rate)
 
     if not realized:
         st.info("매도(SELL) 거래내역이 없어 실현손익이 없습니다. 사이드바에서 거래내역을 업로드하세요.")
@@ -32,15 +36,20 @@ def render(ctx):
                 "종목": r["name"],
                 "티커": r["ticker"],
                 "수량": f"{r['quantity']:,.0f}",
-                "매도대금": f"{r['proceeds']:,.0f}",
-                "취득원가": f"{r['cost_basis']:,.0f}",
-                "실현손익": f"{r['gain']:,.0f}",
+                "통화": r["currency"],
+                "매도대금": f"{r['proceeds']:,.2f}",
+                "취득원가": f"{r['cost_basis']:,.2f}",
+                "실현손익": f"{r['gain']:,.2f}",
+                "실현손익(원)": f"{r['gain_krw']:,.0f}",
             }
             for r in realized
         ]
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
         total_gain = tax_calc.total_realized_gain(realized)
-        st.caption("이동평균 원가 방식으로 계산하며, 수수료·거래세는 실현손익에서 차감했습니다.")
+        st.caption(
+            "이동평균 원가 방식이며 수수료·거래세를 차감했습니다. "
+            f"외화 거래는 USD/KRW {fx_rate:,.0f} 을 적용해 원화로 환산했습니다."
+        )
 
     # === 양도소득세 ===
     st.markdown("### 해외주식 양도소득세")

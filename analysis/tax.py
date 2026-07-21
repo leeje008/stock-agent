@@ -98,15 +98,24 @@ def isa_tax_benefit(
     }
 
 
-def realized_pnl_from_transactions(transactions: list[dict]) -> list[dict]:
+def realized_pnl_from_transactions(
+    transactions: list[dict], fx_rate: float = 1.0
+) -> list[dict]:
     """거래내역에서 이동평균 원가 기준 실현손익을 산출한다.
 
     broker/aggregator.TransactionAggregator 와 동일한 이동평균 방식:
     BUY는 수량·원가를 누적하고, SELL은 평균단가 기준으로 원가를 비례 차감한다.
     수수료/세금은 실현손익에서 차감한다.
 
-    transactions: [{"date","ticker","name","action","quantity","price","fee","tax"}, ...]
-    Returns: [{"date","ticker","name","quantity","proceeds","cost_basis","gain"}, ...]
+    통화: 거래의 `currency` 가 KRW 가 아니면 `fx_rate` 를 곱해 원화 환산액(`gain_krw`)을
+    함께 계산한다. 서로 다른 통화의 손익을 그대로 더하지 않도록, 합산은 반드시
+    `total_realized_gain()`(원화 기준)을 사용한다.
+
+    transactions: [{"date","ticker","name","action","quantity","price","fee","tax","currency"}, ...]
+    fx_rate: USD→KRW 환율 (원화 환산용)
+    Returns: [{"date","ticker","name","quantity","currency",
+               "proceeds","cost_basis","gain","gain_krw"}, ...]
+             proceeds/cost_basis/gain 은 거래 통화 기준, gain_krw 는 원화 기준.
     """
     if not transactions:
         return []
@@ -140,19 +149,27 @@ def realized_pnl_from_transactions(transactions: list[dict]) -> list[dict]:
             proceeds = price * sell_qty - fee - tax
             pos["quantity"] -= sell_qty
             pos["total_cost"] = max(0.0, pos["total_cost"] - cost_basis)
+            currency = txn.get("currency") or "KRW"
+            gain = proceeds - cost_basis
+            rate = 1.0 if currency == "KRW" else float(fx_rate)
             realized.append({
                 "date": txn.get("date", ""),
                 "ticker": ticker,
                 "name": txn.get("name", ticker),
                 "quantity": sell_qty,
+                "currency": currency,
                 "proceeds": proceeds,
                 "cost_basis": cost_basis,
-                "gain": proceeds - cost_basis,
+                "gain": gain,
+                "gain_krw": gain * rate,
             })
 
     return realized
 
 
 def total_realized_gain(realized: list[dict]) -> float:
-    """실현손익 합계 (손실 포함)."""
-    return float(sum(r.get("gain", 0.0) for r in realized))
+    """실현손익 합계 (원화 기준, 손실 포함).
+
+    통화가 섞인 거래를 안전하게 합산하기 위해 항상 `gain_krw` 를 사용한다.
+    """
+    return float(sum(r.get("gain_krw", r.get("gain", 0.0)) for r in realized))

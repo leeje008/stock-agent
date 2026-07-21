@@ -1,11 +1,48 @@
 from analysis import tax
 
 
-def _txn(date, ticker, action, qty, price, fee=0.0, tax_amt=0.0):
+def _txn(date, ticker, action, qty, price, fee=0.0, tax_amt=0.0, currency="KRW"):
     return {
         "date": date, "ticker": ticker, "name": ticker, "action": action,
         "quantity": qty, "price": price, "fee": fee, "tax": tax_amt,
+        "currency": currency,
     }
+
+
+def test_usd_gain_converted_to_krw():
+    """외화 실현손익은 환율로 환산되어야 한다 (USD 이익을 원화로 착각하면 안 됨)."""
+    txns = [
+        _txn("2024-01-01", "AAPL", "BUY", 10, 100.0, currency="USD"),
+        _txn("2024-02-01", "AAPL", "SELL", 10, 200.0, currency="USD"),
+    ]
+    realized = tax.realized_pnl_from_transactions(txns, fx_rate=1300.0)
+    r = realized[0]
+    assert r["currency"] == "USD"
+    assert abs(r["gain"] - 1000.0) < 1e-6          # 거래 통화 기준
+    assert abs(r["gain_krw"] - 1_300_000.0) < 1e-6  # 원화 환산
+    assert abs(tax.total_realized_gain(realized) - 1_300_000.0) < 1e-6
+
+
+def test_mixed_currency_total_is_krw():
+    """KRW/USD 혼재 시 합계는 원화 기준으로 더해져야 한다."""
+    txns = [
+        _txn("2024-01-01", "005930", "BUY", 10, 70_000.0, currency="KRW"),
+        _txn("2024-02-01", "005930", "SELL", 10, 80_000.0, currency="KRW"),
+        _txn("2024-01-01", "AAPL", "BUY", 1, 100.0, currency="USD"),
+        _txn("2024-02-01", "AAPL", "SELL", 1, 200.0, currency="USD"),
+    ]
+    realized = tax.realized_pnl_from_transactions(txns, fx_rate=1300.0)
+    # KRW 100,000 + USD 100 × 1300 = 230,000
+    assert abs(tax.total_realized_gain(realized) - 230_000.0) < 1e-6
+
+
+def test_krw_unaffected_by_fx_rate():
+    txns = [
+        _txn("2024-01-01", "005930", "BUY", 1, 1000.0, currency="KRW"),
+        _txn("2024-02-01", "005930", "SELL", 1, 1500.0, currency="KRW"),
+    ]
+    realized = tax.realized_pnl_from_transactions(txns, fx_rate=9999.0)
+    assert abs(realized[0]["gain_krw"] - 500.0) < 1e-6
 
 
 def test_capital_gains_below_deduction_is_zero():

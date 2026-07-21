@@ -79,6 +79,30 @@ def test_backtest_tab_renders_results(patched):
     assert not at.exception, [str(e.value) for e in at.exception]
 
 
+def test_tax_tab_autofills_realized_gain(temp_db, patched):
+    """세금 탭이 거래내역에서 실현손익을 읽어 양도차익 입력을 채우는지."""
+    from portfolio.manager import PortfolioManager
+    from streamlit.testing.v1 import AppTest
+
+    pm = PortfolioManager()
+    pm.record_transactions_batch([{
+        "date": "2024-02-01", "ticker": "AAPL", "name": "Apple", "action": "SELL",
+        "quantity": 10, "price": 200.0, "amount": 2000.0, "fee": 0.0, "tax": 0.0,
+        "currency": "USD", "market": "US",
+    }])
+    pm.record_transactions_batch([{
+        "date": "2024-01-01", "ticker": "AAPL", "name": "Apple", "action": "BUY",
+        "quantity": 10, "price": 100.0, "amount": 1000.0, "fee": 0.0, "tax": 0.0,
+        "currency": "USD", "market": "US",
+    }])
+
+    at = AppTest.from_file("app.py", default_timeout=90)
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    # USD 1,000 이익 × 1350 = 1,350,000원 이 자동 반영되어야 한다
+    assert at.session_state["tax_gain_input"] == 1_350_000
+
+
 def test_app_runs_with_holdings(patched):
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file("app.py", default_timeout=90)

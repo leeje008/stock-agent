@@ -98,6 +98,12 @@ class PortfolioManager:
         return row_id
 
     def get_transactions(self, limit: int = 50) -> list[dict]:
+        """최근 거래내역 (표시용, 원본 컬럼 그대로).
+
+        주의: 최신순 LIMIT 이라 오래된 행이 잘리고 tx_date/note 컬럼명이 정규화되지
+        않는다. 실현손익처럼 전체 이력이 시간순으로 필요한 계산에는
+        get_all_transactions() 를 사용할 것.
+        """
         conn = get_connection()
         rows = conn.execute(
             "SELECT * FROM transactions ORDER BY created_at DESC LIMIT ?",
@@ -113,8 +119,11 @@ class PortfolioManager:
         원가 계산은 전체 이력이 시간순으로 필요하므로 LIMIT을 걸지 않는다.
         """
         conn = get_connection()
+        # tx_date 가 없는 레거시 행은 앞이 아니라 뒤로 보낸다 (미기재 매도가
+        # 이후 계산의 포지션을 오염시키지 않도록)
         rows = conn.execute(
-            "SELECT * FROM transactions ORDER BY tx_date ASC, id ASC"
+            "SELECT * FROM transactions "
+            "ORDER BY (tx_date IS NULL), tx_date ASC, id ASC"
         ).fetchall()
         conn.close()
 

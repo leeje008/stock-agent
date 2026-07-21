@@ -92,10 +92,23 @@ def test_portfolio_frame_cache_preserves_values(monkeypatch):
             return _frame(seed=2)
 
     holdings = [_H()]
-    key = tuple((h.id, h.ticker, h.market, h.quantity, h.avg_price, h.currency) for h in holdings)
+
+    def _key(hs):
+        # ui.context 와 동일한 키 구성 (출력 컬럼에 쓰이는 name/sector 포함)
+        return tuple(
+            (h.id, h.ticker, h.market, h.quantity, h.avg_price, h.currency, h.name, h.sector)
+            for h in hs
+        )
+
+    key = _key(holdings)
     df1 = ctxmod._build_portfolio_frame(key, holdings, _F())
     df2 = ctxmod._build_portfolio_frame(key, holdings, _F())
     pd.testing.assert_frame_equal(df1, df2)
+
+    # 종목명이 바뀌면 키가 달라져 캐시가 무효화되어야 한다
+    holdings[0].name = "Alpha Renamed"
+    df3 = ctxmod._build_portfolio_frame(_key(holdings), holdings, _F())
+    assert df3["종목명"].iloc[0] == "Alpha Renamed"
 
     expected_price = float(_frame(seed=2)["Close"].iloc[-1])
     assert abs(float(df1["현재가"].iloc[0]) - expected_price) < 1e-9
