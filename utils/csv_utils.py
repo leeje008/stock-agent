@@ -10,6 +10,10 @@ from datetime import datetime
 
 import pandas as pd
 
+from utils.logger import get_logger
+
+logger = get_logger("utils.csv_utils")
+
 DEFAULT_ENCODINGS: tuple[str, ...] = ("utf-8", "cp949", "euc-kr")
 
 
@@ -26,11 +30,18 @@ def read_csv_with_fallback(
 
     Returns: 첫 성공 DataFrame, 모두 실패하면 None.
     """
+    last_error: Exception | None = None
     for enc in encodings:
         try:
             return pd.read_csv(io.BytesIO(file_data), encoding=enc, **read_csv_kwargs)
-        except Exception:
+        except Exception as e:
+            last_error = e
+            logger.debug(f"CSV 읽기 실패 (encoding={enc}): {e}")
             continue
+    if last_error is not None:
+        logger.warning(
+            f"모든 인코딩({', '.join(encodings)})으로 CSV를 읽지 못했습니다: {last_error}"
+        )
     return None
 
 

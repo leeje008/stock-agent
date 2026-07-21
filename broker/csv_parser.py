@@ -2,6 +2,9 @@ import pandas as pd
 import io
 
 from utils.csv_utils import parse_date, parse_number, read_csv_with_fallback
+from utils.logger import get_logger
+
+logger = get_logger("broker.csv_parser")
 
 
 class BrokerCSVParser:
@@ -100,6 +103,7 @@ class BrokerCSVParser:
         col_mapping = self._detect_columns(df, fmt)
 
         transactions = []
+        skipped_rows = 0
         for _, row in df.iterrows():
             try:
                 # Parse date
@@ -148,9 +152,16 @@ class BrokerCSVParser:
                     "fee": float(fee),
                     "tax": float(tax),
                 })
-            except Exception:
+            except Exception as e:
+                skipped_rows += 1
+                logger.debug(f"거래내역 행 파싱 실패 (건너뜀): {e}")
                 continue
 
+        if skipped_rows:
+            logger.warning(
+                f"{broker} 파일에서 {skipped_rows}개 행을 파싱하지 못해 제외했습니다 "
+                f"(반영 {len(transactions)}건)"
+            )
         return transactions
 
     def _detect_columns(self, df: pd.DataFrame, fmt: dict) -> dict:
@@ -221,7 +232,8 @@ class BrokerCSVParser:
         if filename.endswith((".xlsx", ".xls")):
             try:
                 df = pd.read_excel(io.BytesIO(file_data), nrows=0)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Excel 헤더 읽기 실패 ({filename}): {e}")
                 df = None
         else:
             df = read_csv_with_fallback(file_data, nrows=0)

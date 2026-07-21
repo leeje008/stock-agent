@@ -2,6 +2,9 @@ import pandas as pd
 import io
 
 from utils.csv_utils import parse_date, parse_number, read_csv_with_fallback
+from utils.logger import get_logger
+
+logger = get_logger("budget.csv_parser")
 
 
 CATEGORY_KEYWORDS = {
@@ -89,7 +92,8 @@ class BankCSVParser:
         if filename.endswith((".xlsx", ".xls")):
             try:
                 df = pd.read_excel(io.BytesIO(file_data), nrows=0)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Excel 헤더 읽기 실패 ({filename}): {e}")
                 df = None
         else:
             df = read_csv_with_fallback(file_data, nrows=0)
@@ -131,14 +135,22 @@ class BankCSVParser:
             return []
 
         entries = []
+        skipped_rows = 0
         for _, row in df.iterrows():
             try:
                 entry = self._parse_row(row, fmt)
                 if entry:
                     entries.append(entry)
-            except Exception:
+            except Exception as e:
+                skipped_rows += 1
+                logger.debug(f"가계부 행 파싱 실패 (건너뜀): {e}")
                 continue
 
+        if skipped_rows:
+            logger.warning(
+                f"{bank} 파일에서 {skipped_rows}개 행을 파싱하지 못해 제외했습니다 "
+                f"(반영 {len(entries)}건)"
+            )
         return entries
 
     def _parse_row(self, row, fmt: dict) -> dict | None:
