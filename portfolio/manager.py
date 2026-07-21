@@ -106,6 +106,26 @@ class PortfolioManager:
         conn.close()
         return [dict(r) for r in rows]
 
+    def get_all_transactions(self) -> list[dict]:
+        """전체 거래내역을 거래일 오름차순으로 반환 (실현손익 계산용).
+
+        DB 컬럼(tx_date/note)을 소비자가 쓰는 이름(date/name)으로 정규화한다.
+        원가 계산은 전체 이력이 시간순으로 필요하므로 LIMIT을 걸지 않는다.
+        """
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM transactions ORDER BY tx_date ASC, id ASC"
+        ).fetchall()
+        conn.close()
+
+        transactions = []
+        for r in rows:
+            row = dict(r)
+            row["date"] = row.get("tx_date") or ""
+            row["name"] = row.get("note") or row.get("ticker", "")
+            transactions.append(row)
+        return transactions
+
     def get_holding_by_ticker(self, ticker: str):
         """티커로 보유종목 조회"""
         conn = get_connection()
