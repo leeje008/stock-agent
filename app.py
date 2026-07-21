@@ -18,7 +18,10 @@ from utils.fx import get_usd_krw_rate
 from portfolio.isa_manager import IsaManager, get_or_create_default_account
 from db.models import IsaAccount, MonthlyContribution
 from ui.context import AppContext
-from ui.tabs import tab_1, tab_2, tab_3, tab_4, tab_5, tab_6, tab_7, tab_8, tab_9, tab_10, tab_11, tab_risk
+from ui.tabs import (
+    tab_1, tab_2, tab_3, tab_4, tab_5, tab_6, tab_7, tab_8, tab_9, tab_10, tab_11,
+    tab_risk, tab_tax,
+)
 
 # --- 초기 설정 ---
 st.set_page_config(page_title="주식 포트폴리오 에이전트", layout="wide")
@@ -407,8 +410,8 @@ with st.sidebar:
 # --- 메인 영역 ---
 st.title("주식 포트폴리오 에이전트")
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs(
-    ["포트폴리오 현황", "최적화 결과", "뉴스 & 시장 분석", "매수 가이드", "기술적 분석", "백테스팅", "AI 토론", "가계부", "종목 스크리너", "목표 시뮬레이션", "관심종목", "리스크 관리"]
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13 = st.tabs(
+    ["포트폴리오 현황", "최적화 결과", "뉴스 & 시장 분석", "매수 가이드", "기술적 분석", "백테스팅", "AI 토론", "가계부", "종목 스크리너", "목표 시뮬레이션", "관심종목", "리스크 관리", "세금 계산기"]
 )
 
 
@@ -464,3 +467,6 @@ with tab11:
 
 with tab12:
     tab_risk.render(ctx)
+
+with tab13:
+    tab_tax.render(ctx)

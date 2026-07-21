@@ -12,7 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 TAB_NUMS = list(range(1, 12))
-TAB_MODULES = [f"tab_{n}" for n in TAB_NUMS] + ["tab_risk"]
+TAB_MODULES = [f"tab_{n}" for n in TAB_NUMS] + ["tab_risk", "tab_tax"]
 
 
 @pytest.mark.parametrize("name", TAB_MODULES)
