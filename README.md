@@ -17,8 +17,12 @@
 ### 2. 포트폴리오 최적화 (Tab 2)
 - **Mean-Variance 최적화** — 최대 샤프 비율 / 최소 변동성 전략
 - **Black-Litterman 모델** — AI가 종목별 기대수익률 "뷰"를 생성하고, 이를 수학적 모델에 반영하여 최적 비중 산출
+- **HRP (계층적 리스크 패리티)** / **최소 CVaR (꼬리 위험)** 전략
+- **섹터 비중 상한 제약** — 특정 섹터 쏠림 방지 (예: 섹터당 최대 40%)
+- **종목 비중 상·하한 제약** — 종목별 최소/최대 비중 범위 지정. 실현 불가능한 제약은 안내 메시지로 처리
 - 이산 배분(Discrete Allocation) — 예산 내 실제 매수 주수 계산
 - **효율적 프론티어 시각화** — 위험-수익 곡선 + 최적 포트폴리오 위치 표시
+- **리스크 기여도 분석** — 종목별 포트폴리오 위험 기여 비율
 
 ### 3. 뉴스 & 시장 분석 (Tab 3)
 - **실제 뉴스 수집** — Google News RSS를 통한 종목별/시장별 뉴스 자동 수집 (API 키 불필요)
@@ -37,14 +41,20 @@
 - **MACD** — 추세 전환 신호
 - **볼린저 밴드** — 가격 변동성 범위
 - **이동평균선** (5, 20, 60, 120일) — 추세 방향
+- **스토캐스틱 (%K/%D)** — 과매수(>80)/과매도(<20) 판단
+- **일목균형표** — 전환선/기준선/선행스팬 A·B(구름대)/후행스팬
+- **OBV (On-Balance Volume)** — 거래량 기반 매집/분산 추세
 - **종합 기술적 신호** — 모든 지표를 종합한 매수/매도/중립 판정
-- 인터랙티브 Plotly 차트 (3단 서브플롯: 가격+BB, RSI, MACD)
+- 인터랙티브 Plotly 차트 (가격+BB / RSI / MACD, 추가로 일목·스토캐스틱·OBV)
+- **종목 간 상관관계 히트맵** — 분산 효과 점검
 - **AI 펀더멘탈 분석** — US/ETF 종목의 재무제표(손익, 재무상태표, 현금흐름)를 AI가 분석하여 밸류에이션/수익성/건전성/성장성 평가
 
 ### 6. 백테스팅 (Tab 6)
-- **3가지 전략 비교 백테스트** — 최대 샤프, 최소 변동성, 동일 비중
+- **5가지 전략 비교 백테스트** — 최대 샤프, 최소 변동성, HRP, 최소 CVaR, 동일 비중
 - Walk-forward 방식 — 과거 데이터로 최적화, 미래 성과 측정
-- 성과 지표: 총 수익률, 연환산 수익률, 변동성, 샤프 비율, 최대 낙폭(MDD)
+- 성과 지표: 총 수익률, 연환산 수익률, 변동성, 샤프 비율, **소르티노**, **칼마**, **승률**, 최대 낙폭(MDD)
+- **거래비용(bps) 반영** — 리밸런싱 회전율(turnover)에 비용을 부과한 net 수익률 병기
+- **롤링 지표 차트** — 롤링 샤프 / 롤링 변동성(연율화) 추이
 - **자산 곡선 차트** — 전략별 성과 비교 시각화
 - 룩백 기간, 리밸런싱 주기 커스터마이징 가능
 
@@ -55,27 +65,67 @@
   - Round 3: 중립 Moderator가 양측 의견 종합, 최종 판정
 - 최종 판정: bullish / neutral / bearish + 확신도
 
+### 8. 가계부 (Tab 8)
+- 수입/지출 입력, 월별 현황, 트렌드 분석, 예산 설정
+- **은행/카드 CSV 업로드** — 다중 인코딩(UTF-8/CP949/EUC-KR) 자동 처리, 가맹점명 기반 카테고리 자동 분류
+- **반복 지출 관리** — 구독료·통신비 등 매월 자동 반영 (중복 방지)
+- **AI 가계 분석** 및 **투자 연계** — 투자 가능 여유자금(비상자금 고려) 산출
+
+### 9. 종목 스크리너 (Tab 9)
+- 한국(pykrx) / 미국(S&P 500 주요 종목) 시장 스크리닝
+- 시가총액·PER·배당수익률 등 조건 필터링, 결과 캐싱
+
+### 10. 목표 시뮬레이션 (Tab 10)
+- 목표 금액 달성 확률을 **몬테카를로 시뮬레이션**(1,000회)으로 추정
+- 적립식 납입액·기간·기대수익률 가정에 따른 자산 분포 시각화
+
+### 11. 관심종목 (Tab 11)
+- 관심종목 등록/삭제 및 시세 모니터링
+
+### 12. 리스크 관리 (Tab 12)
+- **VaR 3종 병기** — 히스토리컬 / 파라메트릭(정규분포) / 몬테카를로 (1일, 95%)
+- **CVaR (조건부 VaR)** — 꼬리 구간 평균 손실
+- **시장충격 스트레스 시나리오** — -5% / -10% / -20% / -30% 충격 시 예상 손실금액
+- **벤치마크 대비 베타** — S&P500(^GSPC) / NASDAQ100(^NDX) / KOSPI(^KS11) 선택
+- **집중도 경고 + HHI** — 단일 종목 비중 30% 초과 시 경고
+- **상관관계 히트맵**
+- **목표 대비 리밸런싱 알림** — 목표 비중 이탈(drift) 임계치 초과 종목과 매매 방향 제시
+
+### 13. 세금 계산기 (Tab 13)
+- **실현손익 자동 산출** — 거래내역(SELL)에서 이동평균 원가 기준 계산, 수수료·거래세 차감
+- **해외주식 양도소득세** — 연 250만원 기본공제 후 22%(지방소득세 포함)
+- **배당소득세** — 15.4% 원천징수, 금융소득 연 2,000만원 초과 시 **종합과세 경고**
+- **ISA 비과세 혜택** — 일반형 200만원 / 서민형 400만원 비과세, 초과분 9.9% 분리과세 및 일반계좌 대비 절세액
+- ISA 연간 납입 한도 및 잔여 한도 현황
+- ⚠️ 모든 세액은 참고용 추정치이며 세무 자문이 아닙니다
+
 ---
 
 ## 아키텍처
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Streamlit 대시보드 (7탭)                       │
-│  포트폴리오 │ 최적화 │ 뉴스분석 │ 매수가이드 │ 기술분석 │ 백테스팅 │ AI토론 │
+│                     Streamlit 대시보드 (13탭)                      │
+│  현황 │ 최적화 │ 뉴스 │ 매수 │ 기술 │ 백테스트 │ 토론 │ 가계부 │        │
+│  스크리너 │ 목표시뮬 │ 관심종목 │ 리스크관리 │ 세금계산기              │
+├─────────────────────────────────────────────────────────────────┤
+│  ui/context.py (AppContext) · ui/data_cache.py (st.cache_data)   │
+│  ui/tabs/*.py — 탭별 render(ctx)                                  │
 └──────────────────────────┬──────────────────────────────────────┘
                             │
 ┌──────────────────────────▼──────────────────────────────────────┐
 │                      Core Engine (Python)                        │
 │                                                                  │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────┐  │
-│  │ Data Layer   │  │ Optimizer    │  │ AI Agent Module       │  │
+│  │ Data Layer   │  │ Analytics    │  │ AI Agent Module       │  │
 │  │              │  │              │  │                       │  │
-│  │ • fetcher    │  │ • Max Sharpe │  │ • News Analyzer       │  │
-│  │ • news RSS   │  │ • Min Vol    │  │ • Market Analyst      │  │
-│  │ • FRED API   │  │ • Black-     │  │ • Fundamental Analyst │  │
-│  │ • market_data│  │   Litterman  │  │ • Views Generator     │  │
+│  │ • fetcher    │  │ • Optimizer  │  │ • News Analyzer       │  │
+│  │ • news RSS   │  │   (Sharpe/   │  │ • Market Analyst      │  │
+│  │ • FRED API   │  │   MinVol/BL/ │  │ • Fundamental Analyst │  │
+│  │ • market_data│  │   HRP/CVaR)  │  │ • Views Generator     │  │
 │  │ • FX rate    │  │ • Backtest   │  │ • Debate (Bull/Bear)  │  │
+│  │ • broker CSV │  │ • Risk (VaR) │  │                       │  │
+│  │ • budget CSV │  │ • Tax        │  │                       │  │
 │  └──────┬───────┘  └──────┬───────┘  └──────────┬────────────┘  │
 │         │                  │                      │              │
 │  ┌──────▼───────┐  ┌──────▼───────┐  ┌───────────▼───────────┐  │
@@ -125,11 +175,19 @@
 
 ```
 stock-agent/
-├── app.py                          # Streamlit 메인 앱 (7탭 대시보드)
+├── app.py                          # Streamlit 엔트리 (사이드바 + 컨텍스트 구성 + 13탭 디스패치)
 ├── config.py                       # 환경변수, LLM 설정, DB 경로
 ├── main.py                         # 엔트리포인트 (stub)
 ├── pyproject.toml                  # 의존성 관리 (uv)
 ├── .env.example                    # 환경변수 템플릿
+│
+├── ui/                             # 프레젠테이션 레이어
+│   ├── context.py                 # AppContext (공유 서비스) + 포트폴리오 평가 캐시
+│   ├── data_cache.py              # st.cache_data 기반 시세 캐시 경계
+│   └── tabs/                      # 탭별 render(ctx) 모듈
+│       ├── tab_1.py ~ tab_11.py   # 현황/최적화/뉴스/매수/기술/백테스트/토론/가계부/스크리너/시뮬/관심종목
+│       ├── tab_risk.py            # 리스크 관리
+│       └── tab_tax.py             # 세금 계산기
 │
 ├── agent/                          # AI 에이전트 모듈
 │   ├── llm_client.py              # Ollama LLM 클라이언트 (듀얼 모델 라우팅)
@@ -141,14 +199,34 @@ stock-agent/
 │   └── report_generator.py        # 리포트 저장/조회 (SQLite)
 │
 ├── analysis/                       # 분석 엔진
-│   ├── technical.py               # 기술적 분석 (RSI, MACD, BB, MA)
-│   └── backtest.py                # 전략 백테스팅 (Walk-forward)
+│   ├── technical.py               # 기술적 분석 (RSI, MACD, BB, MA, 스토캐스틱, 일목, OBV)
+│   ├── backtest.py                # 전략 백테스팅 (Walk-forward, 롤링 지표, 턴오버/비용)
+│   ├── risk.py                    # VaR/CVaR, 상관관계, 집중도(HHI), 스트레스, 베타
+│   ├── tax.py                     # 양도소득세/배당소득세/ISA 비과세, 실현손익
+│   ├── screener.py                # 종목 스크리닝 (KR/US)
+│   ├── monte_carlo.py             # 목표 달성 확률 시뮬레이션
+│   └── dividend.py                # 배당 분석
 │
 ├── portfolio/                      # 포트폴리오 관리
-│   ├── manager.py                 # CRUD (종목 추가/삭제/조회)
-│   ├── optimizer.py               # 최적화 엔진 (Max Sharpe, Min Vol, BL)
+│   ├── manager.py                 # CRUD (종목/거래내역)
+│   ├── optimizer.py               # 최적화 엔진 (Max Sharpe, Min Vol, BL, HRP, CVaR, 제약)
 │   ├── allocator.py               # 예산 배분 & 매수 가이드
-│   └── tracker.py                 # 성과 추적 (일별 스냅샷)
+│   ├── rebalancer.py              # 목표 비중 저장 및 드리프트 알림
+│   ├── tracker.py                 # 성과 추적 (일별 스냅샷)
+│   ├── isa_manager.py             # ISA 계좌/월별 납입 관리
+│   ├── dca_advisor.py             # 적립식(DCA) 비중 추천
+│   └── watchlist.py               # 관심종목
+│
+├── broker/                         # 증권사 거래내역 처리
+│   ├── csv_parser.py              # 증권사 CSV/Excel 파서
+│   ├── aggregator.py              # 거래내역 → 보유현황 집계 (이동평균 원가)
+│   └── manual_isa.py              # ISA 단순 양식 파서
+│
+├── budget/                         # 가계부
+│   ├── manager.py                 # 수입/지출 CRUD, 카테고리
+│   ├── analyzer.py                # 월별 요약/트렌드/투자 여유자금
+│   ├── recurring.py               # 반복 지출 자동 반영
+│   └── csv_parser.py              # 은행/카드 CSV 파서
 │
 ├── data/                           # 데이터 수집
 │   ├── fetcher.py                 # 주가 데이터 (yfinance, pykrx)
@@ -162,12 +240,17 @@ stock-agent/
 │
 ├── utils/                          # 유틸리티
 │   ├── fx.py                      # USD/KRW 환율 변환
-│   ├── helpers.py                 # 캐시 관리, 포매팅
-│   └── constants.py               # 상수 (리스크 레벨, FRED 지표 ID)
+│   ├── helpers.py                 # 파일 캐시(TTL), 포매팅, 재시도 데코레이터
+│   ├── csv_utils.py               # CSV 인코딩 폴백/날짜·숫자 파싱 공통 로직
+│   ├── logger.py                  # 회전 파일 로거
+│   └── constants.py               # 상수 (리스크 레벨, FRED 지표 ID, ISA 한도)
+│
+├── tests/                          # pytest 테스트 스위트
 │
 └── data/                           # 데이터 저장 (자동 생성)
     ├── stock_agent.db             # SQLite 데이터베이스
-    └── cache/                     # JSON 캐시 파일
+    ├── cache/                     # JSON 캐시 파일
+    └── logs/                      # 애플리케이션 로그
 ```
 
 ---
@@ -232,6 +315,17 @@ uv run streamlit run app.py
 ```
 
 브라우저에서 `http://localhost:8501` 접속
+
+### 5. 테스트 / 린트 (개발자용)
+
+```bash
+uv run pytest tests/ -q     # 단위 + 헤드리스 앱 스모크 테스트
+uvx ruff check .            # 린트
+```
+
+테스트는 네트워크를 타지 않습니다. 시세 조회는 모킹하고, DB 의존 테스트는
+임시 SQLite 파일로 격리하므로 실제 `data/stock_agent.db` 를 건드리지 않습니다.
+앱 전체 렌더는 Streamlit `AppTest` 로 헤드리스 검증합니다.
 
 ---
 
@@ -315,6 +409,9 @@ uv run streamlit run app.py
 
 ## 향후 개발 계획
 
+- [x] 리스크 관리 대시보드 — VaR(히스토리컬/파라메트릭/몬테카를로), CVaR, 스트레스, 베타, 집중도
+- [x] 세금 계산기 — 양도소득세 / 배당소득세 / ISA 비과세 한도
+- [ ] 절세 시뮬레이션 — 매도 시점 조절을 통한 손익통산 최적화
 - [ ] RAG 기반 심층 분석 — ChromaDB + 임베딩 모델(`nomic-embed-text`)로 과거 뉴스 검색 기반 분석
 - [ ] 섹터 로테이션 전략 — 경기순환 분석 + 섹터별 투자 강도 히트맵
 - [ ] PDF 리포트 내보내기 — Markdown → PDF 변환

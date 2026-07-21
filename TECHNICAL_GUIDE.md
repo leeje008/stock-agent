@@ -2238,3 +2238,121 @@ Tab 1 렌더링
 | `setuptools` | <82 | 빌드 도구 | 패키지 빌드 호환성 (상한 제한) |
 
 **Python 버전 요구**: `>=3.11` (union type hint `X | Y` 문법 사용)
+
+---
+
+## 13. 리스크 분석 상세 (`analysis/risk.py`)
+
+리스크 관리 탭(`ui/tabs/tab_risk.py`)의 계산 백엔드. 외부 API 없이 numpy/pandas와
+표준 라이브러리만 사용한다.
+
+### 13.1 포트폴리오 수익률
+
+```python
+portfolio_returns(prices: pd.DataFrame, weights: dict) -> pd.Series
+```
+
+가중치가 0이 아닌 종목만 추려 일별 수익률을 가중합한다. 가중치 합이 1이 아니면
+내부에서 정규화하므로 부분 포트폴리오에도 안전하다.
+
+### 13.2 VaR 3종
+
+| 함수 | 방식 | 특징 |
+|------|------|------|
+| `portfolio_var` | 히스토리컬 | 실제 수익률 분포의 (1-α) 분위수. 분포 가정 없음 |
+| `parametric_var` | 정규분포 | `mu + z·sigma` (z = `NormalDist().inv_cdf(1-α)`). 계산 저렴 |
+| `monte_carlo_var` | 시뮬레이션 | 추정된 (mu, sigma)로 N회 샘플링. `seed` 고정으로 재현 가능 |
+
+셋 모두 **손실 크기를 양수로** 반환하며, 데이터가 없거나 표준편차가 0이면 0.0을 돌려준다.
+`portfolio_cvar` 는 VaR을 초과하는 꼬리 구간의 평균 손실로, 정의상 VaR 이상이다.
+
+### 13.3 스트레스 시나리오와 베타
+
+```python
+stress_scenarios(total_value, shocks=[-0.05, -0.10, -0.20, -0.30])
+portfolio_beta(prices, weights, benchmark_returns)
+```
+
+- 스트레스: 포트폴리오가 시장과 동일하게 움직인다는 단순 가정 하의 충격별 손실금액.
+- 베타: `cov(포트폴리오, 벤치마크) / var(벤치마크)`. 두 시계열을 날짜 기준으로 정렬(inner join)
+  한 뒤 계산하며, 공통 구간이 2개 미만이거나 벤치마크 분산이 0이면 0.0을 반환한다.
+  UI에서는 ^GSPC(기본) / ^NDX / ^KS11 중 선택할 수 있다.
+
+### 13.4 집중도
+
+`concentration_alerts(weights, threshold=0.30)` 는 임계 초과 종목을 심각도와 함께 반환하고,
+`herfindahl_index(weights)` 는 0(완전 분산)~1(완전 집중) 범위의 HHI를 준다.
+
+---
+
+## 14. 세금 계산 상세 (`analysis/tax.py`)
+
+세금 계산기 탭(`ui/tabs/tab_tax.py`)의 계산 백엔드. **모든 결과는 참고용 추정치이며
+세무 자문이 아니다.** UI에도 동일한 면책 문구를 노출한다.
+
+### 14.1 적용 세율 상수
+
+| 상수 | 값 | 근거 |
+|------|-----|------|
+| `CAPITAL_GAINS_DEDUCTION` | 2,500,000 | 해외주식 양도소득 기본공제 (연) |
+| `CAPITAL_GAINS_RATE` | 0.22 | 양도소득세 20% + 지방소득세 2% |
+| `DIVIDEND_TAX_RATE` | 0.154 | 배당소득세 14% + 지방소득세 1.4% |
+| `COMPREHENSIVE_TAXATION_THRESHOLD` | 20,000,000 | 금융소득종합과세 기준 (연) |
+| `ISA_EXEMPT_GENERAL` / `ISA_EXEMPT_REBORN` | 2,000,000 / 4,000,000 | ISA 비과세 한도 (일반형/서민형) |
+| `ISA_SEPARATE_TAX_RATE` | 0.099 | ISA 비과세 초과분 분리과세 |
+
+### 14.2 실현손익 산출
+
+```python
+realized_pnl_from_transactions(transactions) -> list[dict]
+```
+
+거래내역을 날짜순으로 훑으며 **이동평균 원가**를 유지한다 (`broker/aggregator.py` 와 동일 방식).
+
+- BUY: 수량과 총원가를 누적
+- SELL: `평균단가 × 매도수량` 을 원가로 인식하고, 매도대금에서 수수료·거래세를 차감해 손익 확정
+- 보유 수량이 없는 상태의 SELL은 무시 (데이터 오류 방어)
+
+> 실제 신고 기준(선입선출 등)과 다를 수 있으므로 참고용으로만 사용한다.
+
+### 14.3 세액 함수
+
+- `capital_gains_tax(gain)`: 손실이면 전부 0. 이익이면 기본공제를 적용한 과세표준에 22%.
+- `dividend_tax(income)`: 15.4% 원천징수 + 종합과세 대상 여부 플래그.
+- `isa_tax_benefit(profit, account_type)`: 비과세 한도까지 면세, 초과분 9.9%,
+  일반계좌(15.4%) 대비 절세 추정액(`saved_vs_normal`)도 함께 반환.
+
+---
+
+## 15. 캐싱 전략 (`ui/data_cache.py`, `utils/helpers.py`)
+
+캐시는 **2계층**으로 구성된다.
+
+### 15.1 파일 캐시 (프로세스 간 공유)
+
+`utils/helpers.py` 의 `read_cache` / `write_cache` 는 키를 MD5 해시한 JSON 파일을
+`data/cache/` 에 저장하고, `config.CACHE_EXPIRY_HOURS` 기준으로 만료시킨다.
+`data/fetcher.py` 의 시세 조회와 `utils/fx.py` 의 환율 조회가 이 계층을 쓴다.
+
+### 15.2 Streamlit 캐시 (재실행 비용 제거)
+
+Streamlit은 **위젯을 조작할 때마다 스크립트 전체를 다시 실행**한다. 13개 탭이 매번
+재실행되므로, 시세 조회와 포트폴리오 평가를 그대로 두면 상호작용마다 반복 비용이 발생한다.
+이를 막기 위해 `st.cache_data` 를 순수 함수 경계에 적용한다.
+
+| 대상 | 위치 | 키 | TTL |
+|------|------|-----|-----|
+| 다종목 종가 | `ui/data_cache.get_multiple_prices_cached` | `((ticker, market), ...)` 튜플 + period | 300초 |
+| 단일 종목 OHLCV | `ui/data_cache.get_price_data_cached` | ticker, market, period | 300초 |
+| 포트폴리오 평가 프레임 | `ui/context._build_portfolio_frame` | 보유종목 시그니처 튜플 | 300초 |
+
+**설계 규칙**
+
+- 캐시 키가 되는 인자는 모두 해시 가능한 원시값(문자열/튜플)으로 받는다.
+- 해시할 수 없는 객체(서비스 인스턴스 등)는 `_` 접두사를 붙여 Streamlit 해싱에서 제외한다.
+  (`_build_portfolio_frame(holdings_key, _holdings, _fetcher)`)
+- 보유종목이 바뀌면 시그니처 튜플이 바뀌어 자동으로 캐시가 무효화된다.
+- 테스트에서는 `st.cache_data.clear()` 로 케이스 간 격리를 보장한다.
+
+`st.cache_data` 는 Streamlit 런타임 밖(pytest)에서도 메모리 캐시로 동작하므로
+단위 테스트가 깨지지 않는다.
