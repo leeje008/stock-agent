@@ -3,6 +3,9 @@ from datetime import datetime
 from urllib.parse import quote
 
 from utils.helpers import read_cache, write_cache
+from utils.logger import get_logger
+
+logger = get_logger("news_fetcher")
 
 # 한국 주요 종목 티커-이름 매핑
 KR_TICKER_NAMES = {
@@ -65,7 +68,8 @@ class NewsFetcher:
             articles = self._parse_feed(feed_url, limit)
             write_cache(cache_key, articles)
             return articles
-        except Exception:
+        except Exception as e:
+            logger.warning(f"뉴스 수집 실패: {e}")
             return []
 
     def get_market_news(
@@ -96,7 +100,8 @@ class NewsFetcher:
             articles = self._parse_feed(feed_url, limit)
             write_cache(cache_key, articles)
             return articles
-        except Exception:
+        except Exception as e:
+            logger.warning(f"뉴스 수집 실패: {e}")
             return []
 
     def _build_kr_query(self, ticker: str) -> str:

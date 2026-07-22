@@ -55,6 +55,6 @@ class EconomicDataFetcher:
                         if len(data) > 22
                         else None,
                     }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"거시지표 요약 실패: {e}")
         return summary

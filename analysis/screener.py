@@ -34,7 +34,8 @@ def screen_kr_market(market: str = "KOSPI", filters: dict | None = None) -> pd.D
                 df = krx.get_market_fundamental(date_str, market=market)
                 if not df.empty:
                     break
-            except Exception:
+            except Exception as e:
+                logger.debug(f"KR 펀더멘탈 조회 실패({date_str}): {e}")
                 continue
         else:
             return pd.DataFrame()
@@ -46,7 +47,8 @@ def screen_kr_market(market: str = "KOSPI", filters: dict | None = None) -> pd.D
                 df["종목명"] = df.index.map(lambda x: names.get(x, x))
             else:
                 df["종목명"] = df.index
-        except Exception:
+        except Exception as e:
+            logger.debug(f"KR 종목명 매핑 실패: {e}")
             df["종목명"] = df.index
 
         df = df.reset_index()
@@ -95,7 +97,8 @@ def screen_us_stocks(universe: list[str] | None = None, filters: dict | None = N
                     "현재가": info.get("currentPrice", 0),
                     "섹터": info.get("sector", ""),
                 }
-            except Exception:
+            except Exception as e:
+                logger.debug(f"US 종목 정보 조회 실패: {e}")
                 return None
 
         with ThreadPoolExecutor(max_workers=5) as executor:

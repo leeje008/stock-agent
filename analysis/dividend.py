@@ -34,8 +34,8 @@ def get_dividend_info(ticker: str, market: str, quantity: int, currency: str = "
                 yearly = divs.resample("YE").sum()
                 if len(yearly) >= 2 and yearly.iloc[-2] > 0:
                     growth_rate = float(yearly.iloc[-1] / yearly.iloc[-2] - 1)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"배당 성장률 계산 실패: {e}")
 
         result = {
             "ticker": ticker,
