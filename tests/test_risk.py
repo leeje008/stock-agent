@@ -94,3 +94,30 @@ def test_portfolio_beta():
 def test_portfolio_beta_empty():
     import pandas as pd
     assert risk.portfolio_beta(_prices(), {"AAA": 1.0}, pd.Series(dtype=float)) == 0.0
+
+
+def test_portfolio_beta_string_index_alignment():
+    """포트폴리오는 DatetimeIndex, 벤치마크는 문자열 인덱스여도 정렬되어야 한다.
+
+    정규화가 없으면 concat 정렬에서 겹치는 날짜가 0이 되어 베타가 0으로 나온다.
+    """
+    prices = _prices()  # DatetimeIndex
+    w = {"AAA": 0.4, "BBB": 0.3, "CCC": 0.3}
+    pr = risk.portfolio_returns(prices, w)
+
+    # 벤치마크 = 포트폴리오 자신인데 인덱스만 'YYYY-MM-DD' 문자열로 바꾼다
+    bench_str = pr.copy()
+    bench_str.index = [d.strftime("%Y-%m-%d") for d in pr.index]
+
+    beta = risk.portfolio_beta(prices, w, bench_str)
+    # 자기 자신이므로 정렬만 되면 베타 ≈ 1
+    assert abs(beta - 1.0) < 1e-6
+
+
+def test_portfolio_beta_unparseable_index_safe():
+    import pandas as pd
+    prices = _prices()
+    w = {"AAA": 1.0}
+    bad = pd.Series([0.01, 0.02, 0.03], index=["x", "y", "z"])
+    # 파싱 불가 인덱스는 안전하게 0.0 (예외 없음)
+    assert risk.portfolio_beta(prices, w, bad) == 0.0

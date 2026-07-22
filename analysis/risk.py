@@ -160,7 +160,26 @@ def portfolio_beta(
     pr = portfolio_returns(prices, weights)
     if pr.empty or benchmark_returns is None or benchmark_returns.empty:
         return 0.0
-    joined = pd.concat([pr.rename("p"), benchmark_returns.rename("b")], axis=1).dropna()
+
+    # 포트폴리오와 벤치마크는 서로 다른 소스(pykrx 문자열 인덱스 / yfinance
+    # DatetimeIndex)에서 오므로 인덱스 포맷이 다르면 정렬이 어긋나 겹치는 날짜가
+    # 0이 되고 베타가 항상 0으로 나온다. 양쪽을 pandas datetime 으로 정규화해
+    # 어느 쪽이 문자열이든 정렬을 보장한다.
+    def _normalize(series: pd.Series) -> pd.Series:
+        idx = pd.to_datetime(series.index, errors="coerce", format="mixed")
+        out = series.copy()
+        out.index = idx
+        return out[~out.index.isna()]
+
+    try:
+        pr = _normalize(pr)
+        bench = _normalize(benchmark_returns)
+    except Exception:
+        pr, bench = pr, benchmark_returns
+
+    if pr.empty or bench.empty:
+        return 0.0
+    joined = pd.concat([pr.rename("p"), bench.rename("b")], axis=1).dropna()
     if len(joined) < 2:
         return 0.0
     var_b = float(joined["b"].var(ddof=1))
