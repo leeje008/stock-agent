@@ -22,7 +22,7 @@ class ReportGenerator:
         row = conn.execute(
             """SELECT * FROM analysis_reports
                WHERE report_type=?
-               ORDER BY created_at DESC LIMIT 1""",
+               ORDER BY created_at DESC, id DESC LIMIT 1""",
             (report_type,),
         ).fetchone()
         conn.close()
@@ -35,7 +35,7 @@ class ReportGenerator:
         rows = conn.execute(
             """SELECT * FROM analysis_reports
                WHERE report_type=?
-               ORDER BY created_at DESC LIMIT ?""",
+               ORDER BY created_at DESC, id DESC LIMIT ?""",
             (report_type, limit),
         ).fetchall()
         conn.close()
