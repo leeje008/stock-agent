@@ -23,6 +23,8 @@ def render(ctx):
         st.warning("포트폴리오 데이터를 불러올 수 없습니다.")
         return
 
+    name_map = {h.ticker: h.name for h in holdings}
+
     # 현재 비중
     weights = Rebalancer.compute_current_weights(port_df)
     if not weights:
@@ -107,7 +109,6 @@ def render(ctx):
     else:
         corr = risk.correlation_matrix(prices)
         if not corr.empty:
-            name_map = {h.ticker: h.name for h in holdings}
             labels = [name_map.get(t, t) for t in corr.columns]
             fig = px.imshow(
                 corr.values, x=labels, y=labels,
@@ -124,7 +125,6 @@ def render(ctx):
     if not alerts:
         st.success("단일 종목 비중이 30%를 초과하는 종목이 없습니다.")
     else:
-        name_map = {h.ticker: h.name for h in holdings}
         for a in alerts:
             label = name_map.get(a["ticker"], a["ticker"])
             icon = "🔴" if a["severity"] == "high" else "🟠"
@@ -144,7 +144,6 @@ def render(ctx):
         if not drift_alerts:
             st.success(f"모든 종목이 목표 비중 대비 ±{threshold_pct}%p 이내입니다.")
         else:
-            name_map = {h.ticker: h.name for h in holdings}
             rows = []
             for d in drift_alerts:
                 rows.append({

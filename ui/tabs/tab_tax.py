@@ -74,7 +74,8 @@ def render(ctx):
     # === 배당소득세 ===
     st.markdown("### 배당소득세")
     div_input = st.number_input(
-        "연간 배당소득 (원)", value=0, step=100_000, format="%d", key="tax_dividend_input",
+        "연간 배당소득 (원)", value=0, min_value=0, step=100_000, format="%d",
+        key="tax_dividend_input",
     )
     dv = tax_calc.dividend_tax(float(div_input))
     d1, d2 = st.columns(2)
@@ -93,8 +94,8 @@ def render(ctx):
     acc_type = isa_account.tax_status if isa_account else "general"
     type_label = {"general": "일반형", "flexible": "중개형", "reborn": "서민형"}.get(acc_type, acc_type)
     isa_profit = st.number_input(
-        "ISA 계좌 순이익 (원)", value=0, step=100_000, format="%d", key="tax_isa_profit",
-        help="ISA 계좌 내 이자·배당·매매차익 순이익 합계",
+        "ISA 계좌 순이익 (원)", value=0, min_value=0, step=100_000, format="%d",
+        key="tax_isa_profit", help="ISA 계좌 내 이자·배당·매매차익 순이익 합계",
     )
     isa = tax_calc.isa_tax_benefit(float(isa_profit), acc_type)
     i1, i2, i3 = st.columns(3)

@@ -17,6 +17,13 @@ def simulate(
         percentiles: 10/25/50/75/90 분위 경로
         goal_probability: 목표 달성 확률 (goal_amount 지정 시)
     """
+    # 입력 경계값 방어: 음수/0 등 비정상 값에서도 예외 없이 동작하도록 정규화
+    years = max(1, int(years))
+    n_simulations = max(1, int(n_simulations))
+    annual_volatility = max(0.0, float(annual_volatility))
+    initial_value = max(0.0, float(initial_value))
+    monthly_contribution = max(0.0, float(monthly_contribution))
+
     monthly_return = expected_annual_return / 12
     monthly_vol = annual_volatility / np.sqrt(12)
     n_months = years * 12
