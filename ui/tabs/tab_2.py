@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from portfolio.allocator import BudgetAllocator
+from ui.data_cache import get_multiple_prices_cached, ticker_dicts_to_key
 
 
 def render(ctx):
@@ -81,7 +82,7 @@ def render(ctx):
 
                         # 가격 데이터로 옵티마이저 생성 후 BL 최적화
                         from portfolio.optimizer import PortfolioOptimizer
-                        prices = fetcher.get_multiple_prices(tickers, "1y")
+                        prices = get_multiple_prices_cached(ticker_dicts_to_key(tickers), "1y", _fetcher=fetcher)
                         if prices.empty or len(prices.columns) < 2:
                             st.error("최소 2개 이상의 종목 시세 데이터가 필요합니다.")
                         else:
@@ -167,7 +168,7 @@ def render(ctx):
             # 효율적 프론티어
             try:
                 tickers_data = [{"ticker": h.ticker, "market": h.market} for h in pm.get_all_holdings()]
-                prices = fetcher.get_multiple_prices(tickers_data, "1y")
+                prices = get_multiple_prices_cached(ticker_dicts_to_key(tickers_data), "1y", _fetcher=fetcher)
                 if not prices.empty and len(prices.columns) >= 2:
                     from portfolio.optimizer import PortfolioOptimizer
                     opt = PortfolioOptimizer(prices)
@@ -202,7 +203,7 @@ def render(ctx):
                 active_weights = result.get("optimal_weights", {})
                 if active_weights and len(active_weights) >= 2:
                     tickers_data = [{"ticker": h.ticker, "market": h.market} for h in pm.get_all_holdings()]
-                    prices = fetcher.get_multiple_prices(tickers_data, "1y")
+                    prices = get_multiple_prices_cached(ticker_dicts_to_key(tickers_data), "1y", _fetcher=fetcher)
                     if not prices.empty:
                         from portfolio.optimizer import PortfolioOptimizer
                         opt_rc = PortfolioOptimizer(prices)

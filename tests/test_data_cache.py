@@ -36,6 +36,52 @@ def test_tickers_to_key():
     assert tickers_to_key(holdings) == (("AAPL", "US"), ("005930", "KR"))
 
 
+def test_ticker_dicts_to_key():
+    from ui.data_cache import ticker_dicts_to_key
+    tickers = [{"ticker": "AAPL", "market": "US"}, {"ticker": "005930", "market": "KR"}]
+    assert ticker_dicts_to_key(tickers) == (("AAPL", "US"), ("005930", "KR"))
+    # market 누락 시 KR 기본값
+    assert ticker_dicts_to_key([{"ticker": "X"}]) == (("X", "KR"),)
+
+
+def test_simulate_cached_deterministic_and_hits(monkeypatch):
+    import ui.data_cache as dc
+    st.cache_data.clear()
+    calls = {"n": 0}
+    real = __import__("analysis.monte_carlo", fromlist=["simulate"]).simulate
+
+    def counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr("analysis.monte_carlo.simulate", counting)
+    a = dc.simulate_cached(1_000_000, 100_000, 0.06, 0.12, 5, 200, 500_000_000)
+    b = dc.simulate_cached(1_000_000, 100_000, 0.06, 0.12, 5, 200, 500_000_000)
+    # seed 고정이라 동일 결과 + 두번째는 캐시 히트 (원본 1회만 호출)
+    assert a["final_median"] == b["final_median"]
+    assert 0.0 <= a["prob_goal"] <= 1.0
+    assert calls["n"] == 1
+
+
+def test_screen_market_cached_hits(monkeypatch):
+    import pandas as pd
+    import analysis.screener as screener
+    st.cache_data.clear()
+    calls = {"n": 0}
+
+    def fake_kr(market="KOSPI", filters=None):
+        calls["n"] += 1
+        return pd.DataFrame([{"종목명": "삼성전자", "PER": 10.0}])
+
+    monkeypatch.setattr(screener, "screen_kr_market", fake_kr)
+    from ui.data_cache import screen_market_cached
+    items = (("per_max", 20.0), ("pbr_max", 3.0))
+    r1 = screen_market_cached("KOSPI", items)
+    r2 = screen_market_cached("KOSPI", items)
+    pd.testing.assert_frame_equal(r1, r2)
+    assert calls["n"] == 1  # 두번째는 캐시 히트
+
+
 def test_price_cache_returns_same_result_and_hits_cache(monkeypatch):
     from data.fetcher import StockDataFetcher
     calls = {"n": 0}

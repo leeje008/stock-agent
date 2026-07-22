@@ -39,3 +39,49 @@ def get_price_data_cached(
 def tickers_to_key(holdings) -> tuple[tuple[str, str], ...]:
     """보유종목 리스트를 캐시 키용 튜플로 변환한다."""
     return tuple((h.ticker, h.market) for h in holdings)
+
+
+def ticker_dicts_to_key(tickers: list[dict]) -> tuple[tuple[str, str], ...]:
+    """[{"ticker","market"}, ...] 리스트를 캐시 키용 튜플로 변환한다."""
+    return tuple((t["ticker"], t.get("market", "KR")) for t in tickers)
+
+
+# 스크리너/시뮬레이션 결과 캐시 TTL (초). 장중 갱신 빈도가 낮아 시세보다 길게 둔다.
+COMPUTE_CACHE_TTL = 600
+
+
+@st.cache_data(ttl=COMPUTE_CACHE_TTL, show_spinner=False)
+def screen_market_cached(
+    market: str, filters_items: tuple[tuple[str, float], ...]
+) -> pd.DataFrame:
+    """시장 스크리닝 결과 (캐시). filters 는 해시 가능한 (키,값) 튜플로 받는다."""
+    from analysis.screener import screen_kr_market, screen_us_stocks
+
+    filters = dict(filters_items)
+    if market in ("KOSPI", "KOSDAQ"):
+        return screen_kr_market(market, filters)
+    return screen_us_stocks(filters=filters)
+
+
+@st.cache_data(ttl=COMPUTE_CACHE_TTL, show_spinner=False)
+def simulate_cached(
+    initial_value: float,
+    monthly_contribution: float,
+    expected_annual_return: float,
+    annual_volatility: float,
+    years: int,
+    n_simulations: int,
+    goal_amount: float | None,
+) -> dict:
+    """몬테카를로 시뮬레이션 (캐시). simulate 는 seed 고정이라 결정적이다."""
+    from analysis.monte_carlo import simulate
+
+    return simulate(
+        initial_value=initial_value,
+        monthly_contribution=monthly_contribution,
+        expected_annual_return=expected_annual_return,
+        annual_volatility=annual_volatility,
+        years=years,
+        n_simulations=n_simulations,
+        goal_amount=goal_amount,
+    )

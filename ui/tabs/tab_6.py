@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from ui.data_cache import get_multiple_prices_cached, ticker_dicts_to_key
 
 
 def render(ctx):
@@ -30,7 +31,7 @@ def render(ctx):
 
                 tickers_data = [{"ticker": h.ticker, "market": h.market} for h in holdings]
                 with st.spinner("시세 데이터 수집 중..."):
-                    prices = fetcher.get_multiple_prices(tickers_data, bt_period)
+                    prices = get_multiple_prices_cached(ticker_dicts_to_key(tickers_data), bt_period, _fetcher=fetcher)
 
                 if prices.empty or len(prices.columns) < 2:
                     st.error("시세 데이터가 부족합니다.")

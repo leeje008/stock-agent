@@ -40,10 +40,10 @@ def render(ctx):
         )
 
     if st.button("시뮬레이션 실행", type="primary", key="run_mc"):
-        from analysis.monte_carlo import simulate
+        from ui.data_cache import simulate_cached
 
         with st.spinner("1,000회 시뮬레이션 실행 중..."):
-            mc_result = simulate(
+            mc_result = simulate_cached(
                 initial_value=mc_initial_val,
                 monthly_contribution=mc_monthly,
                 expected_annual_return=mc_return,

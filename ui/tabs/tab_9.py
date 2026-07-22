@@ -18,20 +18,17 @@ def render(ctx):
         scr_roe_min = st.number_input("ROE 최소 (%)", value=0.0, min_value=0.0, max_value=100.0, key="scr_roe")
 
     if st.button("스크리닝 실행", type="primary", key="run_screener"):
-        from analysis.screener import screen_kr_market, screen_us_stocks
+        from ui.data_cache import screen_market_cached
 
-        filters = {
-            "per_max": scr_per_max,
-            "pbr_max": scr_pbr_max,
-            "div_min": scr_div_min,
-            "roe_min": scr_roe_min,
-        }
+        filters_items = (
+            ("per_max", scr_per_max),
+            ("pbr_max", scr_pbr_max),
+            ("div_min", scr_div_min),
+            ("roe_min", scr_roe_min),
+        )
 
         with st.spinner("스크리닝 중..."):
-            if scr_market in ["KOSPI", "KOSDAQ"]:
-                scr_df = screen_kr_market(scr_market, filters)
-            else:
-                scr_df = screen_us_stocks(filters=filters)
+            scr_df = screen_market_cached(scr_market, filters_items)
 
         if scr_df.empty:
             st.info("조건에 맞는 종목이 없습니다.")
